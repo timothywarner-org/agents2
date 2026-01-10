@@ -1,7 +1,7 @@
 """
-Process individual issue files from the incoming folder.
+File processing logic for the folder watcher.
 
-Handles validation, processing, and file movement.
+Handles validation, pipeline execution, and file movement.
 """
 
 from __future__ import annotations
@@ -12,10 +12,9 @@ from typing import Optional
 from ..config import Config
 from ..issue_sources import FileIssueSource
 from ..logging_setup import get_pipeline_logger
-from ..models import Issue
-from ..pipeline.run_once import run_pipeline, save_result
-from ..util.fs import atomic_move, get_timestamped_filename, ensure_dirs
+from ..util.fs import atomic_move, get_timestamped_filename, safe_write_json
 from ..util.json_schema import IssueValidationError
+from ..pipeline.run_once import run_pipeline, save_result
 
 
 def process_issue_file(
@@ -23,12 +22,13 @@ def process_issue_file(
     config: Config,
     write_dev_files: bool = False,
 ) -> Optional[Path]:
-    """Process a single issue file.
+    """Process a single issue file through the pipeline.
 
-    1. Validates the issue schema
-    2. Moves file to processed/ (or processed/invalid/ on error)
+    This function:
+    1. Validates the issue JSON
+    2. Moves the file to processed/ (or processed/invalid/ on failure)
     3. Runs the pipeline
-    4. Saves result to outgoing/
+    4. Saves the result to outgoing/
 
     Args:
         file_path: Path to the issue JSON file.
@@ -36,42 +36,52 @@ def process_issue_file(
         write_dev_files: Whether to write dev files to disk.
 
     Returns:
-        Path to the output result file, or None on failure.
+        Path to the output file if successful, None if failed.
     """
     logger = get_pipeline_logger()
+    logger.file_operation("Processing", str(file_path))
 
-    logger.info(f"Processing file: {file_path.name}")
-
-    # Ensure directories exist
-    ensure_dirs(
-        config.processed_dir,
-        config.processed_dir / "invalid",
-        config.outgoing_dir,
+    # Generate processed filename with timestamp
+    processed_name = get_timestamped_filename(
+        file_path.stem,
+        file_path.suffix,
     )
 
-    # Try to load and validate the issue
     try:
+        # Validate and load the issue
         issue = FileIssueSource.from_path(file_path)
+        logger.info(f"Loaded issue: {issue.issue_id}")
 
     except IssueValidationError as e:
-        # Invalid schema - move to invalid folder
-        logger.warning(f"Invalid issue schema: {e}")
+        # Move to invalid folder
+        logger.error(f"Validation failed: {e}")
         for error in e.errors:
-            logger.warning(f"  - {error}")
+            logger.error(f"  - {error}")
 
-        _move_to_invalid(file_path, config)
+        invalid_dir = config.processed_dir / "invalid"
+        invalid_dir.mkdir(parents=True, exist_ok=True)
+        invalid_path = invalid_dir / processed_name
+
+        try:
+            atomic_move(file_path, invalid_path)
+            logger.file_operation("Moved to invalid", str(invalid_path))
+        except Exception as move_error:
+            logger.error(f"Failed to move invalid file: {move_error}")
+
         return None
 
     except Exception as e:
-        # Other loading error
         logger.error(f"Failed to load issue: {e}")
-        _move_to_invalid(file_path, config)
         return None
 
-    # Move to processed (before running pipeline to prevent reprocessing)
-    processed_name = get_timestamped_filename(file_path.stem)
-    processed_path = atomic_move(file_path, config.processed_dir, processed_name)
-    logger.file_operation("Moved to processed", str(processed_path))
+    # Move to processed folder (before running pipeline)
+    processed_path = config.processed_dir / processed_name
+    try:
+        atomic_move(file_path, processed_path)
+        logger.file_operation("Moved to processed", str(processed_path))
+    except Exception as e:
+        logger.error(f"Failed to move to processed: {e}")
+        return None
 
     # Run the pipeline
     try:
@@ -99,28 +109,5 @@ def process_issue_file(
         return output_path
 
     except Exception as e:
-        logger.error(f"Pipeline failed for {issue.issue_id}: {e}", e)
+        logger.error(f"Pipeline failed: {e}", e)
         return None
-
-
-def _move_to_invalid(file_path: Path, config: Config) -> Path:
-    """Move an invalid file to the invalid subfolder.
-
-    Args:
-        file_path: Path to the invalid file.
-        config: Application configuration.
-
-    Returns:
-        Path to the moved file.
-    """
-    logger = get_pipeline_logger()
-
-    invalid_dir = config.processed_dir / "invalid"
-    ensure_dirs(invalid_dir)
-
-    invalid_name = get_timestamped_filename(f"invalid_{file_path.stem}")
-    moved_path = atomic_move(file_path, invalid_dir, invalid_name)
-
-    logger.file_operation("Quarantined invalid file", str(moved_path))
-
-    return moved_path
