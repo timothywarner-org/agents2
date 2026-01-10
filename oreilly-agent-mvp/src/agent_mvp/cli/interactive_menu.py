@@ -8,7 +8,9 @@ from typing import Optional
 from ..config import Config
 from ..issue_sources import FileIssueSource
 from ..logging_setup import get_pipeline_logger, setup_logging
+from ..persistence import SQLiteStore
 from ..pipeline.run_once import run_pipeline, save_result
+from ..util.reporting import format_run_report
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
@@ -171,13 +173,18 @@ def process_issue_file(issue_file: Path) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     output_path = save_result(result, output_dir)
+
+    db_path = config.project_root / "data" / "pipeline.db"
+    store = SQLiteStore(db_path)
+    store.save_result(result)
+
     logger.complete_run(
         run_id=result.run_id,
         issue_id=result.issue.issue_id,
         verdict=result.qa.verdict.value,
         output_file=str(output_path),
     )
-    print(f"\nOK: Pipeline complete. Output: {output_path}")
+    print("\n" + format_run_report(result, output_path))
 
 
 def main() -> None:

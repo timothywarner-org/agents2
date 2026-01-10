@@ -14,6 +14,7 @@ from ..issue_sources import FileIssueSource
 from ..logging_setup import get_pipeline_logger
 from ..persistence import SQLiteStore
 from ..util.fs import atomic_move, get_timestamped_filename, safe_write_json
+from ..util.reporting import format_run_report
 from ..util.json_schema import IssueValidationError
 from ..pipeline.run_once import run_pipeline, save_result
 
@@ -104,6 +105,9 @@ def process_issue_file(
         store = SQLiteStore(db_path)
         store.save_result(result)
         logger.file_operation('Persisted to database', str(db_path))
+
+        # Print run report with token usage
+        print("\n" + format_run_report(result, output_path))
 
         # Log completion
         logger.complete_run(

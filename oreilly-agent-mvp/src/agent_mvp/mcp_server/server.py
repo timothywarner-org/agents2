@@ -18,6 +18,7 @@ from ..issue_sources import FileIssueSource
 from ..logging_setup import setup_logging
 from ..models import Issue
 from ..pipeline.run_once import run_pipeline, save_result
+from ..util.reporting import format_run_report
 
 # Initialize FastMCP server
 mcp = FastMCP(
@@ -214,6 +215,10 @@ async def run_agent_pipeline(
             "dev_output": result.dev.model_dump(),
             "qa_output": result.qa.model_dump(),
             "output_file": str(output_path),
+            "token_usage": result.metadata.token_usage.model_dump()
+            if result.metadata and result.metadata.token_usage
+            else None,
+            "report": format_run_report(result, output_path),
         }
 
     except Exception as e:
@@ -266,6 +271,10 @@ async def process_issue_file(
             "run_id": result.run_id,
             "verdict": result.qa.verdict.value,
             "output_file": str(output_path),
+            "token_usage": result.metadata.token_usage.model_dump()
+            if result.metadata and result.metadata.token_usage
+            else None,
+            "report": format_run_report(result, output_path),
         }
 
     except Exception as e:

@@ -22,6 +22,7 @@ from ..logging_setup import setup_logging, get_pipeline_logger, print_banner
 from ..models import Issue, PipelineResult
 from ..persistence import SQLiteStore
 from ..util.fs import safe_write_json, get_timestamped_filename
+from ..util.reporting import format_run_report
 from .graph import create_pipeline_graph, PipelineState
 
 
@@ -282,6 +283,9 @@ Examples:
         store = SQLiteStore(db_path)
         store.save_result(result)
         logger.file_operation('Persisted to database', str(db_path))
+
+        # Print run report with token usage
+        print("\n" + format_run_report(result, output_path))
 
         # Log completion
         duration = result.run_id  # Duration is in metadata
