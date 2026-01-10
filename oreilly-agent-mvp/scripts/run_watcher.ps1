@@ -8,6 +8,11 @@
 
 $ErrorActionPreference = "Stop"
 
+# Ensure script runs from the project root
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$projectRoot = Resolve-Path (Join-Path $scriptDir '..')
+Set-Location $projectRoot
+
 # Activate virtual environment if not already active
 if (-not $env:VIRTUAL_ENV) {
     & .\.venv\Scripts\Activate.ps1

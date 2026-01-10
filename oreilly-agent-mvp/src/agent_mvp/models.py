@@ -11,10 +11,86 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Literal, Optional
+from typing import Literal, Optional, Any
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
+
+
+# =============================================================================
+# Token Tracking Models
+# =============================================================================
+
+
+class TokenUsage(BaseModel):
+    """Token usage statistics for an LLM call.
+
+    Used to track token consumption and costs for teaching responsible AI usage.
+    """
+    input_tokens: int = Field(
+        description="Number of tokens in the prompt (input)",
+        ge=0,
+    )
+    output_tokens: int = Field(
+        description="Number of tokens in the response (output)",
+        ge=0,
+    )
+    total_tokens: int = Field(
+        description="Total tokens used (input + output)",
+        ge=0,
+    )
+    model_name: str = Field(
+        description="LLM model used (e.g., 'claude-3-5-sonnet-20241022')",
+    )
+    estimated_cost_usd: Optional[float] = Field(
+        default=None,
+        description="Estimated cost in USD based on published pricing",
+    )
+
+
+class AgentTokens(BaseModel):
+    """Token usage for a specific agent in the pipeline."""
+    agent_name: str = Field(
+        description="Name of the agent (PM, Dev, QA)",
+    )
+    usage: TokenUsage = Field(
+        description="Token usage statistics for this agent",
+    )
+
+
+class PipelineTokens(BaseModel):
+    """Complete token usage for a pipeline run.
+
+    Tracks individual agent usage and provides totals for cost awareness.
+    """
+    agents: list[AgentTokens] = Field(
+        description="Token usage per agent",
+        default_factory=list,
+    )
+    total_input_tokens: int = Field(
+        default=0,
+        description="Total input tokens across all agents",
+    )
+    total_output_tokens: int = Field(
+        default=0,
+        description="Total output tokens across all agents",
+    )
+    total_tokens: int = Field(
+        default=0,
+        description="Total tokens used in entire pipeline",
+    )
+    estimated_total_cost_usd: Optional[float] = Field(
+        default=None,
+        description="Estimated total cost in USD",
+    )
+    cost_breakdown: dict[str, float] = Field(
+        default_factory=dict,
+        description="Cost per agent for detailed analysis",
+    )
+    efficiency_metrics: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Additional metrics (tokens/agent, context %, etc.)",
+    )
 
 
 # =============================================================================
@@ -183,6 +259,10 @@ class RunMetadata(BaseModel):
         default=None,
         description="Total pipeline duration in seconds",
     )
+    token_usage: Optional[PipelineTokens] = Field(
+        default=None,
+        description="Token usage statistics for the entire pipeline run",
+    )
 
 
 class PipelineResult(BaseModel):
@@ -211,6 +291,10 @@ class PipelineResult(BaseModel):
     next_steps: list[str] = Field(
         description="Recommended next steps for the human reviewer",
         default_factory=list,
+    )
+    metadata: Optional[RunMetadata] = Field(
+        default=None,
+        description="Run metadata including duration and token usage",
     )
 
     @classmethod
@@ -267,4 +351,5 @@ class PipelineResult(BaseModel):
             dev=dev,
             qa=qa,
             next_steps=next_steps,
+            metadata=meta,
         )

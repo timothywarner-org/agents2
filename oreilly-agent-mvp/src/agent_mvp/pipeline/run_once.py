@@ -4,6 +4,7 @@ CLI command for running the pipeline once on a single issue.
 Usage:
     python -m agent_mvp.pipeline.run_once --source mock --mock-file mock_issues/issue_001.json
     python -m agent_mvp.pipeline.run_once --source file --file incoming/some_issue.json
+    python -m agent_mvp.pipeline.run_once --source github --repo owner/repo --issue 123
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from ..config import Config, get_config
 from ..issue_sources import FileIssueSource, MockIssueSource
 from ..logging_setup import setup_logging, get_pipeline_logger, print_banner
 from ..models import Issue, PipelineResult
+from ..persistence import SQLiteStore
 from ..util.fs import safe_write_json, get_timestamped_filename
 from .graph import create_pipeline_graph, PipelineState
 
@@ -60,6 +62,7 @@ def run_pipeline(
         "start_time": start_time,
         "source_file": source_file,
         "issue": issue.model_dump(),
+        "token_usages": [],  # Track token usage per agent
     }
 
     # Create and run the graph
@@ -133,14 +136,17 @@ Examples:
 
   # Run and write dev files to disk
   python -m agent_mvp.pipeline.run_once --source mock --mock-file mock_issues/issue_001.json --write-files
+
+  # Fetch from GitHub via MCP and run
+  python -m agent_mvp.pipeline.run_once --source github --repo owner/repo --issue 123
         """,
     )
 
     parser.add_argument(
         "--source",
-        choices=["mock", "file"],
+        choices=["mock", "file", "github"],
         required=True,
-        help="Issue source: 'mock' for mock_issues/, 'file' for direct file path",
+        help="Issue source: 'mock', 'file', or 'github' (via MCP)",
     )
     parser.add_argument(
         "--mock-file",
@@ -151,6 +157,16 @@ Examples:
         "--file",
         type=str,
         help="Path to issue file (relative or absolute)",
+    )
+    parser.add_argument(
+        "--repo",
+        type=str,
+        help="GitHub repo in 'owner/repo' format (for --source github)",
+    )
+    parser.add_argument(
+        "--issue",
+        type=int,
+        help="GitHub issue number (for --source github)",
     )
     parser.add_argument(
         "--write-files",
@@ -203,6 +219,8 @@ Examples:
         parser.error("--mock-file is required when --source is 'mock'")
     if args.source == "file" and not args.file:
         parser.error("--file is required when --source is 'file'")
+    if args.source == "github" and (not args.repo or not args.issue):
+        parser.error("--repo and --issue are required when --source is 'github'")
 
     # Load issue
     logger = get_pipeline_logger()
@@ -213,6 +231,13 @@ Examples:
                 mock_path = project_root / mock_path
             issue = FileIssueSource.from_path(mock_path)
             source_file = str(mock_path)
+        elif args.source == "github":
+            # Fetch from GitHub via MCP
+            from ..integrations.github_issue_fetcher import fetch_github_issue
+            owner, repo = args.repo.split("/")
+            issue_data = fetch_github_issue(owner, repo, args.issue)
+            issue = Issue(**issue_data)
+            source_file = f"github:{args.repo}#{args.issue}"
         else:
             file_path = Path(args.file)
             if not file_path.is_absolute():
@@ -249,8 +274,14 @@ Examples:
     try:
         result = run_pipeline(issue, config, source_file)
 
-        # Save result
+        # Save result to file
         output_path = save_result(result, output_dir, args.write_files)
+
+        # Persist to SQLite database
+        db_path = project_root / 'data' / 'pipeline.db'
+        store = SQLiteStore(db_path)
+        store.save_result(result)
+        logger.file_operation('Persisted to database', str(db_path))
 
         # Log completion
         duration = result.run_id  # Duration is in metadata

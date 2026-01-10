@@ -12,6 +12,7 @@ from typing import Optional
 from ..config import Config
 from ..issue_sources import FileIssueSource
 from ..logging_setup import get_pipeline_logger
+from ..persistence import SQLiteStore
 from ..util.fs import atomic_move, get_timestamped_filename, safe_write_json
 from ..util.json_schema import IssueValidationError
 from ..pipeline.run_once import run_pipeline, save_result
@@ -91,12 +92,18 @@ def process_issue_file(
             source_file=str(processed_path),
         )
 
-        # Save result
+        # Save result to file
         output_path = save_result(
             result=result,
             output_dir=config.outgoing_dir,
             write_files=write_dev_files,
         )
+
+        # Persist to SQLite database
+        db_path = config.project_root / 'data' / 'pipeline.db'
+        store = SQLiteStore(db_path)
+        store.save_result(result)
+        logger.file_operation('Persisted to database', str(db_path))
 
         # Log completion
         logger.complete_run(

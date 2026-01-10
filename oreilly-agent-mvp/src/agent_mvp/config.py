@@ -2,7 +2,7 @@
 Configuration management for the agent MVP.
 
 Loads settings from environment variables with sensible defaults.
-Supports Anthropic, OpenAI, and Azure OpenAI providers.
+Supports Anthropic, OpenAI (including DeepSeek), and Azure OpenAI providers.
 """
 
 from __future__ import annotations
@@ -35,6 +35,7 @@ class Config:
     # Provider-specific credentials
     anthropic_api_key: Optional[str] = None
     openai_api_key: Optional[str] = None
+    openai_base_url: Optional[str] = None  # For OpenAI-compatible APIs (DeepSeek, etc.)
     azure_openai_endpoint: Optional[str] = None
     azure_openai_api_key: Optional[str] = None
     azure_openai_deployment: Optional[str] = None
@@ -61,22 +62,15 @@ class Config:
 
     @classmethod
     def from_env(cls, project_root: Optional[Path] = None) -> Config:
-        """Load configuration from environment variables.
-
-        Args:
-            project_root: Override the project root directory.
-                          If None, uses current working directory.
-
-        Returns:
-            Configured Config instance.
-        """
+        """Load configuration from environment variables."""
         # Load .env file if present
         if project_root:
             env_path = project_root / ".env"
         else:
             env_path = Path.cwd() / ".env"
 
-        load_dotenv(env_path)
+        # override=True forces .env to override system env vars
+        load_dotenv(env_path, override=True)
 
         # Parse provider
         provider_str = os.getenv("LLM_PROVIDER", "anthropic").lower()
@@ -102,6 +96,7 @@ class Config:
             llm_temperature=float(os.getenv("LLM_TEMPERATURE", "0.2")),
             anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"),
             openai_api_key=os.getenv("OPENAI_API_KEY"),
+            openai_base_url=os.getenv("OPENAI_BASE_URL"),
             azure_openai_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
             azure_openai_api_key=os.getenv("AZURE_OPENAI_API_KEY"),
             azure_openai_deployment=os.getenv("AZURE_OPENAI_DEPLOYMENT"),
@@ -115,14 +110,7 @@ class Config:
         )
 
     def get_llm(self):
-        """Create and return the configured LLM instance.
-
-        Returns:
-            A LangChain-compatible LLM instance.
-
-        Raises:
-            ValueError: If required credentials are missing.
-        """
+        """Create and return the configured LLM instance."""
         if self.llm_provider == LLMProvider.ANTHROPIC:
             if not self.anthropic_api_key:
                 raise ValueError(
@@ -143,11 +131,15 @@ class Config:
                     "Please set it in your .env file or environment."
                 )
             from langchain_openai import ChatOpenAI
-            return ChatOpenAI(
-                model=self.llm_model,
-                temperature=self.llm_temperature,
-                api_key=self.openai_api_key,
-            )
+            kwargs = {
+                "model": self.llm_model,
+                "temperature": self.llm_temperature,
+                "api_key": self.openai_api_key,
+            }
+            # Add base_url for OpenAI-compatible APIs (DeepSeek, etc.)
+            if self.openai_base_url:
+                kwargs["base_url"] = self.openai_base_url
+            return ChatOpenAI(**kwargs)
 
         elif self.llm_provider == LLMProvider.AZURE:
             if not all([
@@ -172,11 +164,7 @@ class Config:
         raise ValueError(f"Unknown LLM provider: {self.llm_provider}")
 
     def validate(self) -> list[str]:
-        """Validate the configuration and return any issues.
-
-        Returns:
-            List of validation error messages (empty if valid).
-        """
+        """Validate the configuration and return any issues."""
         errors = []
 
         # Check provider credentials
@@ -209,11 +197,7 @@ _config: Optional[Config] = None
 
 
 def get_config() -> Config:
-    """Get the global configuration instance.
-
-    Returns:
-        The Config instance loaded from environment.
-    """
+    """Get the global configuration instance."""
     global _config
     if _config is None:
         _config = Config.from_env()

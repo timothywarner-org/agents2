@@ -7,6 +7,11 @@
 
 $ErrorActionPreference = "Stop"
 
+# Ensure script runs from the project root
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$projectRoot = Resolve-Path (Join-Path $scriptDir '..')
+Set-Location $projectRoot
+
 Write-Host "============================================" -ForegroundColor Cyan
 Write-Host "  O'Reilly AI Agents MVP - Setup" -ForegroundColor Cyan
 Write-Host "============================================" -ForegroundColor Cyan

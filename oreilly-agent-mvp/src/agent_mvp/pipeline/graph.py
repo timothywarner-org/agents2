@@ -23,8 +23,10 @@ from ..models import (
     QAOutput,
     PipelineResult,
     RunMetadata,
+    AgentTokens,
 )
 from ..logging_setup import get_pipeline_logger
+from ..util.token_tracking import extract_token_usage, format_token_summary
 from .prompts import (
     PM_SYSTEM_PROMPT,
     DEV_SYSTEM_PROMPT,
@@ -57,6 +59,9 @@ class PipelineState(TypedDict, total=False):
     pm_output: Optional[dict]  # Serialized PMOutput
     dev_output: Optional[dict]  # Serialized DevOutput
     qa_output: Optional[dict]  # Serialized QAOutput
+
+    # Token tracking
+    token_usages: list[dict]  # List of serialized AgentTokens
 
     # Final result
     result: Optional[dict]  # Serialized PipelineResult
@@ -121,6 +126,20 @@ def pm_node(state: PipelineState) -> PipelineState:
             {"role": "user", "content": prompt},
         ])
 
+        # Extract token usage
+        token_usage = extract_token_usage(response, config.llm_model)
+        if token_usage:
+            logger.agent_message(
+                "pm",
+                f"Tokens: {token_usage.input_tokens} in + {token_usage.output_tokens} out = "
+                f"{token_usage.total_tokens} total (${token_usage.estimated_cost_usd:.6f})"
+            )
+            agent_tokens = AgentTokens(agent_name="PM", usage=token_usage)
+            token_usages = state.get("token_usages", [])
+            token_usages.append(agent_tokens.model_dump())
+        else:
+            token_usages = state.get("token_usages", [])
+
         # Parse response as JSON
         content = response.content
         # Try to extract JSON from response
@@ -139,7 +158,7 @@ def pm_node(state: PipelineState) -> PipelineState:
         logger.agent_message("pm", f"Created {len(pm_output.plan)} plan steps")
         logger.node_exit("pm", f"{len(pm_output.acceptance_criteria)} criteria")
 
-        return {**state, "pm_output": pm_output.model_dump()}
+        return {**state, "pm_output": pm_output.model_dump(), "token_usages": token_usages}
 
     except Exception as e:
         logger.error(f"PM agent failed: {e}", e)
@@ -172,6 +191,20 @@ def dev_node(state: PipelineState) -> PipelineState:
             {"role": "user", "content": prompt},
         ])
 
+        # Extract token usage
+        token_usage = extract_token_usage(response, config.llm_model)
+        if token_usage:
+            logger.agent_message(
+                "dev",
+                f"Tokens: {token_usage.input_tokens} in + {token_usage.output_tokens} out = "
+                f"{token_usage.total_tokens} total (${token_usage.estimated_cost_usd:.6f})"
+            )
+            agent_tokens = AgentTokens(agent_name="Dev", usage=token_usage)
+            token_usages = state.get("token_usages", [])
+            token_usages.append(agent_tokens.model_dump())
+        else:
+            token_usages = state.get("token_usages", [])
+
         # Parse response
         content = response.content
         dev_data = _extract_json(content)
@@ -191,7 +224,7 @@ def dev_node(state: PipelineState) -> PipelineState:
         logger.agent_message("dev", f"Created {len(dev_output.files)} file(s)")
         logger.node_exit("dev", f"{len(dev_output.files)} files")
 
-        return {**state, "dev_output": dev_output.model_dump()}
+        return {**state, "dev_output": dev_output.model_dump(), "token_usages": token_usages}
 
     except Exception as e:
         logger.error(f"Dev agent failed: {e}", e)
@@ -225,6 +258,20 @@ def qa_node(state: PipelineState) -> PipelineState:
             {"role": "user", "content": prompt},
         ])
 
+        # Extract token usage
+        token_usage = extract_token_usage(response, config.llm_model)
+        if token_usage:
+            logger.agent_message(
+                "qa",
+                f"Tokens: {token_usage.input_tokens} in + {token_usage.output_tokens} out = "
+                f"{token_usage.total_tokens} total (${token_usage.estimated_cost_usd:.6f})"
+            )
+            agent_tokens = AgentTokens(agent_name="QA", usage=token_usage)
+            token_usages = state.get("token_usages", [])
+            token_usages.append(agent_tokens.model_dump())
+        else:
+            token_usages = state.get("token_usages", [])
+
         # Parse response
         content = response.content
         qa_data = _extract_json(content)
@@ -241,7 +288,7 @@ def qa_node(state: PipelineState) -> PipelineState:
         logger.agent_message("qa", f"Verdict: {qa_output.verdict.value}")
         logger.node_exit("qa", qa_output.verdict.value)
 
-        return {**state, "qa_output": qa_output.model_dump()}
+        return {**state, "qa_output": qa_output.model_dump(), "token_usages": token_usages}
 
     except Exception as e:
         logger.error(f"QA agent failed: {e}", e)
@@ -265,6 +312,9 @@ def finalize_node(state: PipelineState) -> PipelineState:
         return {**state, "result": error_result}
 
     try:
+        # Import here to avoid circular import
+        from ..util.token_tracking import aggregate_pipeline_tokens, format_token_summary
+
         # Build the final result
         issue = Issue(**state["issue"])
         pm_output = PMOutput(**state["pm_output"])
@@ -276,10 +326,20 @@ def finalize_node(state: PipelineState) -> PipelineState:
         if "start_time" in state:
             duration = time.time() - state["start_time"]
 
+        # Aggregate token usage
+        pipeline_tokens = None
+        if state.get("token_usages"):
+            agent_tokens_list = [AgentTokens(**t) for t in state["token_usages"]]
+            pipeline_tokens = aggregate_pipeline_tokens(agent_tokens_list)
+
+            # Log token summary to console
+            print("\n" + format_token_summary(pipeline_tokens))
+
         metadata = RunMetadata(
             run_id=state.get("run_id", str(uuid4())),
             source_file=state.get("source_file"),
             duration_seconds=duration,
+            token_usage=pipeline_tokens,
         )
 
         result = PipelineResult.create(

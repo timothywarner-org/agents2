@@ -5,7 +5,24 @@
       "Bash(printf '%s\\\\n' '# ============================================================================' '# O''''Reilly AI Agents MVP - Run Once Script \\(PowerShell\\)' '# ============================================================================' '# Runs the pipeline once on a mock issue.' '# Run from the project root: .\\\\scripts\\\\run_once.ps1' '# ============================================================================' '' '$ErrorActionPreference = \"\"Stop\"\"' '' '# Activate virtual environment if not already active' 'if \\(-not $env:VIRTUAL_ENV\\) {' '    & .\\\\.venv\\\\Scripts\\\\Activate.ps1' '}' '' '# Default mock file' '$MockFile = $args[0]' 'if \\(-not $MockFile\\) {' '    $MockFile = \"\"mock_issues/issue_001.json\"\"' '}' '' 'Write-Host \"\"Running pipeline with: $MockFile\"\" -ForegroundColor Cyan' 'Write-Host \"\"\"\"' '' '# Run the pipeline' 'python -m agent_mvp.pipeline.run_once --source mock --mock-file $MockFile' '' 'if \\($LASTEXITCODE -ne 0\\) {' '    Write-Host \"\"Pipeline failed with exit code: $LASTEXITCODE\"\" -ForegroundColor Red' '    exit $LASTEXITCODE' '}' '' 'Write-Host \"\"\"\"' 'Write-Host \"\"Done! Check the outgoing/ folder for results.\"\" -ForegroundColor Green')",
       "Bash(printf '%s\\\\n' '# ============================================================================' '# O''''Reilly AI Agents MVP - Run Watcher Script \\(PowerShell\\)' '# ============================================================================' '# Starts the folder watcher to automatically process incoming issues.' '# Run from the project root: .\\\\scripts\\\\run_watcher.ps1' '# Press Ctrl+C to stop.' '# ============================================================================' '' '$ErrorActionPreference = \"\"Stop\"\"' '' '# Activate virtual environment if not already active' 'if \\(-not $env:VIRTUAL_ENV\\) {' '    & .\\\\.venv\\\\Scripts\\\\Activate.ps1' '}' '' 'Write-Host \"\"Starting folder watcher...\"\" -ForegroundColor Cyan' 'Write-Host \"\"Watching: incoming/\"\" -ForegroundColor Gray' 'Write-Host \"\"Press Ctrl+C to stop\"\" -ForegroundColor Gray' 'Write-Host \"\"\"\"' '' '# Run the watcher' 'python -m agent_mvp.watcher.folder_watcher' '' 'if \\($LASTEXITCODE -ne 0\\) {' '    Write-Host \"\"Watcher exited with code: $LASTEXITCODE\"\" -ForegroundColor Yellow' '}')",
       "Bash(printf:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(python test_connectivity.py:*)",
+      "Bash(pip install:*)",
+      "Bash(python:*)",
+      "Bash([ -d .venv ])",
+      "Bash([ -f .env ])",
+      "Bash([ -f src/agent_mvp/pipeline/graph.py ])",
+      "Bash(ls:*)",
+      "Bash(xargs:*)",
+      "Bash(source .venv/Scripts/activate)",
+      "Bash(echo:*)",
+      "mcp__github__get_me",
+      "mcp__github__list_issues",
+      "mcp__github__get_file_contents",
+      "Bash(pip show:*)",
+      "mcp__github__issue_write",
+      "Bash(npx --version:*)",
+      "Bash(sqlite3:*)"
     ]
   }
 }

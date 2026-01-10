@@ -17,6 +17,8 @@ dependencies = [
     "pydantic>=2.0.0",
     "python-dotenv>=1.0.0",
     "rich>=13.0.0",
+    "requests>=2.31.0",
+    "mcp>=1.0.0",
 ]
 
 [project.optional-dependencies]
@@ -29,6 +31,8 @@ dev = [
 [project.scripts]
 agent-mvp = "agent_mvp.pipeline.run_once:main"
 agent-watcher = "agent_mvp.watcher.folder_watcher:main"
+agent-menu = "agent_mvp.cli.interactive_menu:main"
+agent-mcp = "agent_mvp.mcp_server:main"
 
 [build-system]
 requires = ["hatchling"]
