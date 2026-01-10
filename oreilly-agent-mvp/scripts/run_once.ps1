@@ -12,10 +12,15 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $projectRoot = Resolve-Path (Join-Path $scriptDir '..')
 Set-Location $projectRoot
 
-# Activate virtual environment if not already active
-if (-not $env:VIRTUAL_ENV) {
-    & .\.venv\Scripts\Activate.ps1
+# Ensure virtual environment exists and use its Python
+$venvRoot = Join-Path $projectRoot ".venv"
+$venvPython = Join-Path $venvRoot "Scripts\python.exe"
+if (-not (Test-Path $venvPython)) {
+    Write-Host "ERROR: .venv not found. Run .\scripts\setup.ps1 first." -ForegroundColor Red
+    exit 1
 }
+$env:VIRTUAL_ENV = $venvRoot
+$env:PATH = (Join-Path $venvRoot "Scripts") + ";" + $env:PATH
 
 # Default mock file
 $MockFile = $args[0]
@@ -27,7 +32,7 @@ Write-Host "Running pipeline with: $MockFile" -ForegroundColor Cyan
 Write-Host ""
 
 # Run the pipeline
-python -m agent_mvp.pipeline.run_once --source mock --mock-file $MockFile
+& $venvPython -m agent_mvp.pipeline.run_once --source mock --mock-file $MockFile
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Pipeline failed with exit code: $LASTEXITCODE" -ForegroundColor Red

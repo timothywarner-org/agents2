@@ -43,12 +43,13 @@ function Show-Menu {
 
 function Activate-VirtualEnv {
     $venvPath = Join-Path $ProjectRoot ".venv\Scripts\Activate.ps1"
-    if (Test-Path $venvPath) {
+    $script:VenvPython = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
+    if (Test-Path $venvPath -and (Test-Path $script:VenvPython)) {
         & $venvPath
-        Write-Host "✓ Virtual environment activated" -ForegroundColor Green
+        Write-Host "Virtual environment activated" -ForegroundColor Green
     } else {
-        Write-Host "⚠ Virtual environment not found. Run setup.ps1 first." -ForegroundColor Yellow
-        Read-Host "Press Enter to continue anyway or Ctrl+C to exit"
+        Write-Host "ERROR: Virtual environment not found. Run .\scripts\setup.ps1 first." -ForegroundColor Red
+        exit 1
     }
 }
 
@@ -56,7 +57,7 @@ function Invoke-InteractiveMenu {
     Write-Host ""
     Write-Host "Starting Interactive Menu..." -ForegroundColor Cyan
     Write-Host ""
-    python -m agent_mvp.cli.interactive_menu
+    & $script:VenvPython -m agent_mvp.cli.interactive_menu
 }
 
 function Invoke-RunOnce {
@@ -76,7 +77,7 @@ function Invoke-RunOnce {
         Write-Host ""
         Write-Host "Processing $mockFile..." -ForegroundColor Cyan
         Write-Host ""
-        python -m agent_mvp.pipeline.run_once $fullPath
+        & $script:VenvPython -m agent_mvp.pipeline.run_once $fullPath
     } else {
         Write-Host "Error: File not found: $mockFile" -ForegroundColor Red
         Read-Host "Press Enter to continue"
@@ -89,7 +90,7 @@ function Invoke-Watcher {
     Write-Host "Drop JSON files into: $ProjectRoot\incoming\" -ForegroundColor Yellow
     Write-Host "Press Ctrl+C to stop" -ForegroundColor Yellow
     Write-Host ""
-    python -m agent_mvp.watcher.folder_watcher
+    & $script:VenvPython -m agent_mvp.watcher.folder_watcher
 }
 
 function Invoke-MCPServer {
@@ -98,7 +99,7 @@ function Invoke-MCPServer {
     Write-Host "This exposes tools via stdio for Claude/VS Code" -ForegroundColor Yellow
     Write-Host "Press Ctrl+C to stop" -ForegroundColor Yellow
     Write-Host ""
-    python -m agent_mvp.mcp_server
+    & $script:VenvPython -m agent_mvp.mcp_server
 }
 
 function Invoke-MCPInspector {
@@ -119,7 +120,7 @@ function Invoke-MCPInspector {
     Write-Host "Opening web UI at http://localhost:5173" -ForegroundColor Yellow
     Write-Host "Press Ctrl+C to stop" -ForegroundColor Yellow
     Write-Host ""
-    npx "@modelcontextprotocol/inspector" python -m agent_mvp.mcp_server
+    npx "@modelcontextprotocol/inspector" $script:VenvPython -m agent_mvp.mcp_server
 }
 
 function Invoke-Tests {
@@ -128,11 +129,11 @@ function Invoke-Tests {
     Write-Host ""
 
     Write-Host "1. Schema validation tests:" -ForegroundColor Yellow
-    pytest tests/test_schema.py -v
+    & $script:VenvPython -m pytest tests/test_schema.py -v
 
     Write-Host ""
     Write-Host "2. MCP server validation:" -ForegroundColor Yellow
-    python tests/test_mcp_server.py
+    & $script:VenvPython tests/test_mcp_server.py
 
     Write-Host ""
     Write-Host "Tests complete!" -ForegroundColor Green

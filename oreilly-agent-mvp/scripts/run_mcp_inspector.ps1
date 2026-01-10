@@ -7,10 +7,15 @@ $ProjectRoot = Split-Path -Parent $ScriptDir
 
 Set-Location $ProjectRoot
 
-# Activate virtual environment if it exists
-if (Test-Path ".venv\Scripts\Activate.ps1") {
-    & .\.venv\Scripts\Activate.ps1
+# Ensure virtual environment exists and use its Python
+$venvRoot = Join-Path $ProjectRoot ".venv"
+$venvPython = Join-Path $venvRoot "Scripts\python.exe"
+if (-not (Test-Path $venvPython)) {
+    Write-Host "ERROR: .venv not found. Run .\scripts\setup.ps1 first." -ForegroundColor Red
+    exit 1
 }
+$env:VIRTUAL_ENV = $venvRoot
+$env:PATH = (Join-Path $venvRoot "Scripts") + ";" + $env:PATH
 
 Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host "  MCP Inspector - O'Reilly Agent MVP Server" -ForegroundColor Cyan
@@ -47,4 +52,4 @@ try {
 
 # Run MCP Inspector
 # It will automatically download and run the inspector
-npx @modelcontextprotocol/inspector python -m agent_mvp.mcp_server
+npx @modelcontextprotocol/inspector $venvPython -m agent_mvp.mcp_server
