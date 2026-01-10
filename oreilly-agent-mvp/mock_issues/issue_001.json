@@ -1,0 +1,10 @@
+{
+  "issue_id": "acme/webapp#42",
+  "repo": "acme/webapp",
+  "issue_number": 42,
+  "title": "Add dark mode toggle to user settings",
+  "body": "## Feature Request\n\nUsers have requested the ability to toggle between light and dark mode in the application settings.\n\n### Expected Behavior\n- Add a toggle switch in Settings > Appearance\n- When toggled, the entire app should switch themes\n- User preference should persist across sessions\n\n### Additional Context\n- We already have CSS variables for colors\n- Should work on both desktop and mobile views\n- Consider system preference detection as a stretch goal",
+  "labels": ["enhancement", "ui", "good first issue"],
+  "url": "https://github.com/acme/webapp/issues/42",
+  "source": "mock"
+}

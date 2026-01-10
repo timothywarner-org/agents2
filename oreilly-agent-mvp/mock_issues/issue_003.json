@@ -1,0 +1,10 @@
+{
+  "issue_id": "acme/data-pipeline#89",
+  "repo": "acme/data-pipeline",
+  "issue_number": 89,
+  "title": "Fix: CSV export truncates long text fields",
+  "body": "## Bug Report\n\n### Description\nWhen exporting data to CSV, text fields longer than 1000 characters are being silently truncated. This is causing data loss for users who export and then re-import their data.\n\n### Steps to Reproduce\n1. Create a record with a description field > 1000 characters\n2. Export to CSV\n3. Open CSV in text editor\n4. Notice the field is truncated at exactly 1000 chars\n\n### Expected Behavior\nFull text content should be preserved in CSV export.\n\n### Actual Behavior\nText is truncated at 1000 characters with no warning.\n\n### Environment\n- Python 3.11\n- pandas 2.0.3\n- Our export module: src/export/csv_exporter.py\n\n### Possible Root Cause\nI suspect there's a hardcoded limit somewhere in the CSV writer configuration.",
+  "labels": ["bug", "data-integrity", "priority:critical"],
+  "url": "https://github.com/acme/data-pipeline/issues/89",
+  "source": "mock"
+}

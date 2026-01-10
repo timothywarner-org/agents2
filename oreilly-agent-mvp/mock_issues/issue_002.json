@@ -1,0 +1,10 @@
+{
+  "issue_id": "acme/api-service#156",
+  "repo": "acme/api-service",
+  "issue_number": 156,
+  "title": "Add rate limiting to public API endpoints",
+  "body": "## Problem\n\nOur public API endpoints are vulnerable to abuse. We need to implement rate limiting to protect the service.\n\n### Requirements\n- Limit requests to 100 per minute per API key\n- Return 429 Too Many Requests when limit exceeded\n- Include rate limit headers in responses (X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset)\n- Different limits for different endpoint tiers (free vs. premium)\n\n### Technical Notes\n- We use FastAPI\n- Consider Redis for distributed rate limiting\n- Must not significantly impact response latency\n\n### Acceptance Criteria\n- [ ] Rate limiting middleware implemented\n- [ ] Unit tests cover limit scenarios\n- [ ] Documentation updated\n- [ ] Metrics/logging for rate limit events",
+  "labels": ["security", "api", "priority:high"],
+  "url": "https://github.com/acme/api-service/issues/156",
+  "source": "mock"
+}
