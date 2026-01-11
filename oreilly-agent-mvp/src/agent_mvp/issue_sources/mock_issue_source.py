@@ -41,7 +41,7 @@ class MockIssueSource:
         """
         if not self.mock_dir.exists():
             return []
-        return sorted([f.name for f in self.mock_dir.glob("*.json")])
+        return sorted([f.name for f in self.mock_dir.glob("issue_*.json")])
 
     def load(self, filename: str) -> Issue:
         """Load a specific mock issue by filename.

@@ -206,17 +206,22 @@ oreilly-agent-mvp/
 │   └── run_mcp_inspector.ps1       # Start with MCP Inspector - web UI (PowerShell)
 │
 ├── mock_issues/                    # Sample issues for testing
-│   ├── issue_001.json              # Dark mode feature request
-│   ├── issue_002.json              # Bug fix scenario
-│   └── issue_003.json              # API integration task
+│   ├── issue_001.json              # #101 CLI: validate issue JSON files
+│   ├── issue_002.json              # #102 MCP: list_mock_issues priority from labels
+│   ├── issue_003.json              # #103 Watcher: avoid partially-written files
+│   ├── issue_004.json              # #104 Token tracking: handle missing usage
+│   ├── issue_005.json              # #105 Schema: allow optional issue metadata
+│   └── issue_006.json              # #106 Pipeline: dry-run + output-dir consistency
 │
 ├── incoming/                       # Drop issues here for watcher
 ├── outgoing/                       # Pipeline results saved here
 │
 └── tests/                          # Test suite
     ├── __init__.py
-    ├── test_schema.py              # Model validation tests
-    └── test_pipeline.py            # Pipeline integration tests
+    ├── test_fs_moves.py            # File watching and move semantics
+    ├── test_mcp_server.py          # MCP registration contract tests
+    ├── test_schema.py              # Pydantic model validation
+    └── test_token_tracking.py      # Token usage aggregation logic
 ```
 
 ---
@@ -268,7 +273,7 @@ sequenceDiagram
 |-------|------|-------|--------|
 | **PM Agent** | Product Manager | Raw issue | Summary, acceptance criteria, implementation plan, assumptions |
 | **Dev Agent** | Senior Developer | Issue + PM plan | Code files, tests, implementation notes |
-| **QA Agent** | QA Engineer | Issue + PM plan + Dev code | Verdict (APPROVED/NEEDS_WORK/REJECTED), findings, test recommendations |
+| **QA Agent** | QA Engineer | Issue + PM plan + Dev code | Verdict (pass/fail/needs-human), findings, test recommendations |
 
 ### Three Ways to Run
 
@@ -362,15 +367,15 @@ The O'Reilly Agent MVP includes a built-in **MCP server** that exposes the agent
 You: Fetch issue #42 from timothywarner-org/agents2
 
 Claude: [Uses fetch_github_issue tool]
-Issue fetched: "Add user authentication system"
+Issue fetched: "Watcher: avoid processing partially-written incoming JSON files"
 
 You: Run the agent pipeline on it
 
 Claude: [Uses run_agent_pipeline tool]
 Pipeline complete!
-- PM: High priority, 3 day estimate
-- Dev: 5 files to modify, authentication middleware needed
-- QA: APPROVED - plan is thorough and feasible
+- PM: Summary + acceptance criteria
+- Dev: Proposed code + tests
+- QA: pass/fail/needs-human verdict with findings
 ```
 
 **📖 Full Documentation:** [src/agent_mvp/mcp_server/README.md](src/agent_mvp/mcp_server/README.md)
@@ -404,20 +409,22 @@ This app can fetch issues from GitHub using either:
 | Use in VS Code | ❌ No integration | ✅ Copilot chat |
 
 ---
-  }
-}
-```
 
 **`.vscode/mcp.json`** (VS Code Copilot Chat):
 ```json
 {
   "servers": {
     "github": {
+      "type": "remote",
+      "url": "https://api.githubcopilot.com/mcp/",
+      "description": "GitHub MCP server for issue and repository operations"
+    },
+    "oreilly-agent-mvp": {
       "type": "stdio",
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "command": "python",
+      "args": ["-m", "agent_mvp.mcp_server"],
       "env": {
-        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+        "PYTHONPATH": "${workspaceFolder}/src"
       }
     }
   }
@@ -445,7 +452,7 @@ Issues processed by the pipeline must follow this format:
 
 **Required fields:** `issue_id`, `repo`, `issue_number`, `title`, `url`
 
-**Source values:** `mock`, `github-mcp`, `file`
+**Source values:** `mock`, `github-mcp`, `manual`
 
 ---
 
@@ -512,7 +519,7 @@ python -m agent_mvp.pipeline.run_once --source mock --mock-file mock_issues/issu
 # Process from a file
 python -m agent_mvp.pipeline.run_once --source file --file incoming/my_issue.json
 
-# Fetch from GitHub via MCP
+# Fetch from GitHub via REST API
 python -m agent_mvp.pipeline.run_once --source github --repo timothywarner-org/agents2 --issue 1
 
 # Write generated files to disk

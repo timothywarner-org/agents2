@@ -1,10 +1,16 @@
 {
-  "issue_id": "datatech/analytics#89",
-  "repo": "datatech/analytics",
-  "issue_number": 89,
-  "title": "Fix CSV export truncating large datasets",
-  "body": "## Bug Report\n\n### Description\nWhen exporting datasets with more than 10,000 rows to CSV, the export is silently truncated. Users expect all data to be exported.\n\n### Steps to Reproduce\n1. Load a dataset with 15,000 rows\n2. Click Export > CSV\n3. Open the exported file\n4. Count rows - only 10,000 present\n\n### Expected Behavior\nAll 15,000 rows should be exported.\n\n### Actual Behavior\nOnly 10,000 rows are exported, no warning shown.\n\n### Environment\n- Browser: Chrome 120\n- Dataset size: 15,000 rows\n- File size: N/A (issue occurs before file is generated)\n\n### Suggested Fix\nLooks like there's a hardcoded limit in `export_service.py`. Should either:\n1. Remove the limit\n2. Add streaming export for large datasets\n3. At minimum, show a warning to users",
-  "labels": ["bug", "data-export", "priority:medium"],
-  "url": "https://github.com/datatech/analytics/issues/89",
+  "issue_id": "timothywarner-org/agents2#103",
+  "repo": "timothywarner-org/agents2",
+  "issue_number": 103,
+  "title": "Watcher: avoid processing partially-written incoming JSON files (Windows-safe)",
+  "body": "Synopsis: Make the folder watcher wait for a file to be stable before reading/parsing it.\n\n## Background\nOn Windows (and sometimes on network drives), a JSON file can appear in incoming/ before it's fully written. The watcher may attempt to parse it too early, causing intermittent JSON errors and flaky demos.\n\n## Requirements\n- When a new file appears in incoming/, verify it is stable before processing.\n- Stability strategy (pick a simple approach):\n  - Retry until size + mtime stop changing for N checks, with a short sleep between checks.\n- After the file is stable, process it exactly once.\n- If parsing/validation fails, move it to processed/invalid/ and record an error reason in logs (and/or the processed filename pattern, per existing design).\n\n## Acceptance Criteria\n- [ ] A file written in two passes is not processed until complete.\n- [ ] Invalid JSON reliably goes to processed/invalid/.\n- [ ] No busy-looping: retries are bounded and delayed.\n- [ ] Tests cover: stability wait behavior and invalid JSON routing.\n\n## Where to look\n- src/agent_mvp/watcher/folder_watcher.py (watcher logic)\n- src/agent_mvp/util/fs.py (file move helpers)\n- tests/test_fs_moves.py (existing filesystem tests)",
+  "labels": [
+    "bug",
+    "watcher",
+    "filesystem",
+    "good-first-issue",
+    "priority:high"
+  ],
+  "url": "https://github.com/timothywarner-org/agents2/issues/103",
   "source": "mock"
 }

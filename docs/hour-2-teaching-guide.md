@@ -192,11 +192,14 @@ ls outgoing/
 **Point out the structure:**
 ```json
 {
-  "issue": { ... },           // What went IN
-  "pm_output": { ... },       // PM's analysis
-  "dev_output": { ... },      // Dev's code
-  "qa_output": { ... },       // QA's review
-  "metadata": { ... }         // Timestamps, costs
+    "run_id": "...",          // Unique identifier for this run
+    "timestamp_utc": "...",   // When the run finished
+    "issue": { ... },           // What went IN
+    "pm": { ... },              // PM's analysis
+    "dev": { ... },             // Dev's code and tests
+    "qa": { ... },              // QA's verdict and findings
+    "next_steps": [ ... ],      // Suggested follow-up actions
+    "metadata": { ... }         // Timestamps, token usage, cost
 }
 ```
 
@@ -219,14 +222,17 @@ code src/agent_mvp/models.py
 
 **Scroll to these sections:**
 
-**Lines 10-25:** Issue model
+**Lines 15-45:** Issue model
 ```python
 class Issue(BaseModel):
+    issue_id: str
+    repo: str
+    issue_number: int
     title: str
-    description: str
-    priority: str
-    labels: List[str]
-    source: str
+    body: str = ""
+    labels: list[str] = []
+    url: str
+    source: IssueSource = IssueSource.MANUAL
 ```
 
 **Say:** "This is our contract. Every issue must have these fields."

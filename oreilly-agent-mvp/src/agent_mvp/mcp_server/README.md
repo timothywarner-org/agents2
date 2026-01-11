@@ -59,16 +59,46 @@ List available mock issue files in `mock_issues/`.
 **Returns:**
 ```json
 {
-  "status": "success",
-  "mock_issues": [
-    {
-      "filename": "issue_001.json",
-      "title": "Add user authentication",
-      "priority": "high",
-      "path": "/path/to/issue_001.json"
-    }
-  ],
-  "count": 3
+   "status": "success",
+   "mock_issues": [
+      {
+         "filename": "issue_001.json",
+         "title": "CLI: add 'validate-issue' command for issue JSON files",
+         "priority": "unknown",
+         "path": "/path/to/issue_001.json"
+      },
+      {
+         "filename": "issue_002.json",
+         "title": "MCP: list_mock_issues should derive priority from labels (schema-safe)",
+         "priority": "unknown",
+         "path": "/path/to/issue_002.json"
+      },
+      {
+         "filename": "issue_003.json",
+         "title": "Watcher: avoid processing partially-written incoming JSON files (Windows-safe)",
+         "priority": "unknown",
+         "path": "/path/to/issue_003.json"
+      },
+      {
+         "filename": "issue_004.json",
+         "title": "Token tracking: handle missing usage data and keep totals consistent",
+         "priority": "unknown",
+         "path": "/path/to/issue_004.json"
+      },
+      {
+         "filename": "issue_005.json",
+         "title": "Schema: allow optional issue metadata while keeping strict validation",
+         "priority": "unknown",
+         "path": "/path/to/issue_005.json"
+      },
+      {
+         "filename": "issue_006.json",
+         "title": "Pipeline UX: add --dry-run and clarify output directory behavior",
+         "priority": "unknown",
+         "path": "/path/to/issue_006.json"
+      }
+   ],
+   "count": 6
 }
 ```
 
@@ -98,10 +128,12 @@ Run the full PM → Dev → QA agent pipeline on an issue.
 {
   "status": "success",
   "run_id": "20250110_143022",
-  "pm_output": {...},
-  "dev_output": {...},
-  "qa_output": {...},
-  "output_file": "outgoing/result_20250110_143022.json"
+   "pm": {...},
+   "dev": {...},
+   "qa": {...},
+   "output_file": "outgoing/result_20250110_143022.json",
+   "token_usage": {...},
+   "report": "..."
 }
 ```
 
@@ -116,8 +148,10 @@ Process an issue from a JSON file through the pipeline.
 {
   "status": "success",
   "run_id": "20250110_143022",
-  "verdict": "APPROVE",
-  "output_file": "outgoing/result_20250110_143022.json"
+   "verdict": "pass",
+   "output_file": "outgoing/result_20250110_143022.json",
+   "token_usage": {...},
+   "report": "..."
 }
 ```
 
@@ -321,9 +355,12 @@ You: What mock issues are available?
 
 Claude: [Uses list_mock_issues tool]
 Here are the available mock issues:
-1. issue_001.json - Add user authentication (high priority)
-2. issue_002.json - Fix memory leak (critical priority)
-3. issue_003.json - Refactor API endpoints (medium priority)
+1. issue_001.json - #101 CLI: validate issue JSON files
+2. issue_002.json - #102 MCP: mock issue listing priority from labels
+3. issue_003.json - #103 Watcher: avoid partially-written files
+4. issue_004.json - #104 Token tracking: handle missing usage
+5. issue_005.json - #105 Schema: allow optional issue metadata
+6. issue_006.json - #106 Pipeline: dry-run + output-dir consistency
 
 You: Process issue_001.json
 

@@ -138,12 +138,40 @@ List all available mock issue files for testing.
 **Returns:**
 ```json
 {
-  "status": "success",
-  "mock_issues": [
-    {"filename": "issue_001.json", "title": "Add authentication", "priority": "high"},
-    {"filename": "issue_002.json", "title": "Fix memory leak", "priority": "critical"}
-  ],
-  "count": 2
+   "status": "success",
+   "mock_issues": [
+      {
+         "filename": "issue_001.json",
+         "title": "CLI: add 'validate-issue' command for issue JSON files",
+         "priority": "unknown"
+      },
+      {
+         "filename": "issue_002.json",
+         "title": "MCP: list_mock_issues should derive priority from labels (schema-safe)",
+         "priority": "unknown"
+      },
+      {
+         "filename": "issue_003.json",
+         "title": "Watcher: avoid processing partially-written incoming JSON files (Windows-safe)",
+         "priority": "unknown"
+      },
+      {
+         "filename": "issue_004.json",
+         "title": "Token tracking: handle missing usage data and keep totals consistent",
+         "priority": "unknown"
+      },
+      {
+         "filename": "issue_005.json",
+         "title": "Schema: allow optional issue metadata while keeping strict validation",
+         "priority": "unknown"
+      },
+      {
+         "filename": "issue_006.json",
+         "title": "Pipeline UX: add --dry-run and clarify output directory behavior",
+         "priority": "unknown"
+      }
+   ],
+   "count": 6
 }
 ```
 
@@ -171,10 +199,12 @@ Run the full PM → Dev → QA pipeline on issue data.
 {
   "status": "success",
   "run_id": "20250110_143022",
-  "pm_output": {...},
-  "dev_output": {...},
-  "qa_output": {...},
-  "output_file": "outgoing/result_20250110_143022.json"
+   "pm": {...},
+   "dev": {...},
+   "qa": {...},
+   "output_file": "outgoing/result_20250110_143022.json",
+   "token_usage": {...},
+   "report": "..."
 }
 ```
 
@@ -188,8 +218,10 @@ Process a JSON file through the pipeline.
 {
   "status": "success",
   "run_id": "20250110_143022",
-  "verdict": "APPROVE",
-  "output_file": "outgoing/result_20250110_143022.json"
+   "verdict": "pass",
+   "output_file": "outgoing/result_20250110_143022.json",
+   "token_usage": {...},
+   "report": "..."
 }
 ```
 
@@ -280,15 +312,15 @@ Generate test issue data.
 User: Fetch issue #123 from timothywarner-org/agents2
 
 Claude: [Uses fetch_github_issue tool]
-Issue fetched: "Add dark mode support"
+Issue fetched: "Watcher: avoid processing partially-written incoming JSON files (Windows-safe)"
 
 User: Run the pipeline on it
 
 Claude: [Uses run_agent_pipeline tool]
 Pipeline complete!
-- PM: Medium priority, 2-day estimate
-- Dev: 3 files to modify, CSS theming system
-- QA: APPROVED - clear implementation path
+- PM: Summary + acceptance criteria
+- Dev: Proposed code + tests
+- QA: pass/fail/needs-human verdict with findings
 ```
 
 ### Workflow 2: Mock Issue Testing
@@ -298,9 +330,12 @@ User: List available test issues
 
 Claude: [Uses list_mock_issues tool]
 Available issues:
-1. issue_001.json - Add user authentication (high)
-2. issue_002.json - Fix memory leak (critical)
-3. issue_003.json - Refactor API (medium)
+1. issue_001.json - #101 CLI: validate issue JSON files
+2. issue_002.json - #102 MCP: mock issue listing priority from labels
+3. issue_003.json - #103 Watcher: avoid partially-written files
+4. issue_004.json - #104 Token tracking: handle missing usage
+5. issue_005.json - #105 Schema: allow optional issue metadata
+6. issue_006.json - #106 Pipeline: dry-run + output-dir consistency
 
 User: Load and process issue_001.json
 

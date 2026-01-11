@@ -28,18 +28,35 @@
 code src/agent_mvp/pipeline/prompts.py
 ```
 
-**Read aloud (Lines 8-18):**
+**Read aloud (Lines 8-16):**
 ```python
-PM_SYSTEM_PROMPT = """You are a Product Manager analyzing a GitHub issue.
+PM_SYSTEM_PROMPT = """You are a Product Manager reviewing a GitHub issue.
+Your job is to understand the request and create a clear implementation plan.
 
-Your job is to:
-1. Summarize the request clearly
-2. Define measurable acceptance criteria
-3. Create an implementation plan with specific steps
-4. Document any assumptions you're making
+Be concise and practical. Focus on what needs to be done, not perfection.
+"""
+```
 
-Be practical and focused on delivering value.
-Output MUST be valid JSON matching this schema: {...}
+**Call out the JSON template (Lines 18-43):**
+```python
+PM_TASK_PROMPT = """Analyze this GitHub issue and create an implementation plan.
+
+## Issue
+Title: {title}
+Repository: {repo}
+Labels: {labels}
+
+Description:
+{body}
+
+## Your Task
+Provide a JSON response with this structure:
+{
+	"summary": "...",
+	"acceptance_criteria": ["..."],
+	"plan": ["..."],
+	"assumptions": ["..."]
+}
 """
 ```
 
@@ -47,14 +64,13 @@ Output MUST be valid JSON matching this schema: {...}
 - **Answer:** Turn vague requests into clear requirements
 
 **Point out:**
-- "Summarize" → Forces PM to distill the issue
-- "Measurable acceptance criteria" → Makes it testable
-- "Implementation plan" → Gives Dev a roadmap
-- "Output MUST be valid JSON" → Makes it machine-readable
+- "Understand the request" → Forces comprehension
+- The JSON template → Guarantees structured output the pipeline can parse
+- Labels/body interpolation → Shows how context flows into the prompt
 
 **Show an example PM output:**
 ```bash
-cat outgoing/result_*.json | jq .pm_output
+cat outgoing/result_*.json | jq .pm
 ```
 
 **Say:** "Notice how structured this is. That's the prompt at work."
@@ -63,20 +79,40 @@ cat outgoing/result_*.json | jq .pm_output
 
 ### The Dev Agent: Code Generator
 
-**Show:** `src/agent_mvp/pipeline/prompts.py` (Lines 70-95)
+**Show:** `src/agent_mvp/pipeline/prompts.py` (Lines 70-125)
 
-**Read aloud (Lines 78-88):**
+**Read aloud (Lines 74-82):**
 ```python
-DEV_SYSTEM_PROMPT = """You are a Senior Developer implementing a feature.
+DEV_SYSTEM_PROMPT = """You are a Senior Developer implementing a feature based on a PM's plan.
+Your job is to write clean, working code with tests.
 
-Your job is to:
-1. Write clean, working code based on the PM's plan
-2. Create tests that verify the acceptance criteria
-3. Document any implementation decisions
+Write practical code. Don't over-engineer. Include basic tests.
+"""
+```
 
-Focus on practical, maintainable solutions.
-Don't over-engineer, but don't cut corners.
-Output MUST be valid JSON with code files and notes.
+**Highlight the JSON contract (Lines 96-129):**
+```python
+DEV_TASK_PROMPT = """Implement this feature based on the PM's analysis.
+
+## Original Issue
+Title: {title}
+Repository: {repo}
+
+## PM's Analysis
+Summary: {pm_summary}
+
+Acceptance Criteria:
+{acceptance_criteria}
+
+Implementation Plan:
+{plan}
+
+## Your Task
+Write the implementation. Provide a JSON response:
+{
+	"files": [ ... ],
+	"notes": [ ... ]
+}
 """
 ```
 
@@ -85,14 +121,13 @@ Output MUST be valid JSON with code files and notes.
 - Dev is about BUILDING
 
 **Point out:**
-- "Clean, working code" → Quality matters
-- "Create tests" → Not optional
-- "Don't over-engineer" → Keeps it practical
-- "Don't cut corners" → But don't skip steps either
+- The system prompt frames expectations (tests + practicality)
+- The task prompt injects PM context plus JSON schema for files/notes
+- Structured output makes it easy to write files/tests automatically
 
 **Show an example Dev output:**
 ```bash
-cat outgoing/result_*.json | jq .dev_output.files
+cat outgoing/result_*.json | jq .dev.files
 ```
 
 **Say:** "Dev created actual code files. That's the prompt telling it to return structured data."
@@ -103,30 +138,42 @@ cat outgoing/result_*.json | jq .dev_output.files
 
 **Show:** `src/agent_mvp/pipeline/prompts.py` (Lines 130-155)
 
-**Read aloud (Lines 138-148):**
+**Read aloud (Lines 136-144):**
 ```python
-QA_SYSTEM_PROMPT = """You are a QA Engineer reviewing an implementation.
+QA_SYSTEM_PROMPT = """You are a QA Engineer reviewing code implementation.
+Your job is to verify the code meets requirements and find issues.
 
-Your job is to:
-1. Check if the code meets acceptance criteria
-2. Look for bugs, edge cases, and security issues
-3. Verify tests are comprehensive
-4. Provide a clear verdict: APPROVED, NEEDS_WORK, or REJECTED
+Be thorough but practical. Focus on real problems, not style nitpicks.
+"""
+```
 
-Be thorough but fair. Focus on real issues, not nitpicking.
-Output MUST be valid JSON with verdict and findings.
+**Call out the verdict schema (Lines 146-183):**
+```python
+QA_TASK_PROMPT = """Review this implementation against the requirements.
+...
+Provide a JSON response:
+{
+	"verdict": "pass|fail|needs-human",
+	"findings": [ ... ],
+	"suggested_changes": [ ... ]
+}
+
+Verdict guidelines:
+- "pass": ...
+- "fail": ...
+- "needs-human": ...
 """
 ```
 
 **Ask:** "Why three verdict options instead of just pass/fail?"
-- APPROVED → Ship it
-- NEEDS_WORK → Close but needs fixes
-- REJECTED → Start over
+- pass → Ship it
+- fail → Blocking issues were found
+- needs-human → Ambiguous or requires human judgment
 
 **Point out:**
-- "Real issues, not nitpicking" → Keeps feedback useful
-- "Check if code meets acceptance criteria" → Ties back to PM
-- "Comprehensive tests" → Quality gate
+- "Real problems, not style" → Keeps feedback useful
+- Explicit verdict values → Downstream automation can branch on them
+- Suggested changes list → Guides the next iteration
 
 **Key Point:** "These three prompts create a mini-SDLC. PM designs, Dev builds, QA verifies."
 
@@ -207,73 +254,49 @@ code src/agent_mvp/pipeline/prompts.py
 
 **Say:** "Let's make QA more demanding. Find the QA system prompt."
 
-**Original (Lines 138-150):**
+**Original (Lines 136-144):**
 ```python
-QA_SYSTEM_PROMPT = """You are a QA Engineer reviewing an implementation.
+QA_SYSTEM_PROMPT = """You are a QA Engineer reviewing code implementation.
+Your job is to verify the code meets requirements and find issues.
 
-Your job is to:
-1. Check if the code meets acceptance criteria
-2. Look for bugs, edge cases, and security issues
-3. Verify tests are comprehensive
-4. Provide a clear verdict: APPROVED, NEEDS_WORK, or REJECTED
-
-Be thorough but fair. Focus on real issues, not nitpicking.
+Be thorough but practical. Focus on real problems, not style nitpicks.
 """
 ```
 
 **Modified:**
 ```python
-QA_SYSTEM_PROMPT = """You are a SENIOR QA Engineer with 15 years experience reviewing implementations.
+QA_SYSTEM_PROMPT = """You are a SENIOR QA Engineer with 15 years experience reviewing code implementation.
+Your job is to verify the code meets requirements, uncover high-risk gaps, and flag anything requiring human judgment.
 
-Your job is to:
-1. Rigorously verify code meets ALL acceptance criteria
-2. Look for bugs, edge cases, security issues, AND performance problems
-3. Verify tests cover edge cases, not just happy paths
-4. Check for accessibility, localization, and error handling
-5. Provide a clear verdict: APPROVED, NEEDS_WORK, or REJECTED
-
-Be extremely thorough. Quality over speed. If you have ANY doubts, choose NEEDS_WORK.
+Be exhaustive and skeptical. Prioritize quality over speed. Default to "fail" or "needs-human" if any acceptance criteria are questionable.
 """
 ```
 
 **Say:** "Notice what changed:"
-- Added "SENIOR" and "15 years" → Sets higher bar
-- Added "performance problems" → New concern
-- Added "edge cases, not just happy paths" → Raises test bar
-- Added "accessibility, localization" → More concerns
-- "If you have ANY doubts" → Makes it harder to approve
+- Added "SENIOR" and experience → Sets higher bar
+- Emphasized uncovering risks/human judgment → Pushes towards stricter outcomes
+- "Prioritize quality over speed" → Encourages conservative verdicts
+- Explicit "fail"/"needs-human" callout → Aligns with actual verdict vocabulary
 
 ---
 
 ### Example 2: Make PM Focus on Security
 
-**Original (Lines 8-20):**
+**Original (Lines 8-16):**
 ```python
-PM_SYSTEM_PROMPT = """You are a Product Manager analyzing a GitHub issue.
+PM_SYSTEM_PROMPT = """You are a Product Manager reviewing a GitHub issue.
+Your job is to understand the request and create a clear implementation plan.
 
-Your job is to:
-1. Summarize the request clearly
-2. Define measurable acceptance criteria
-3. Create an implementation plan with specific steps
-4. Document any assumptions you're making
-
-Be practical and focused on delivering value.
+Be concise and practical. Focus on what needs to be done, not perfection.
 """
 ```
 
 **Modified:**
 ```python
-PM_SYSTEM_PROMPT = """You are a Security-Focused Product Manager analyzing a GitHub issue.
+PM_SYSTEM_PROMPT = """You are a Security-Focused Product Manager reviewing a GitHub issue.
+Your job is to understand the request, surface security requirements, and create a clear implementation plan.
 
-Your job is to:
-1. Summarize the request clearly
-2. Define measurable acceptance criteria (including security requirements)
-3. Create an implementation plan that addresses potential security risks
-4. Document any assumptions, especially around authentication and data handling
-5. Identify what data is being processed and how it should be protected
-
-Always consider: What could go wrong? Who could abuse this? What data is at risk?
-Be practical but security-first.
+Be concise but security-first. Highlight threat models, data handling, and mitigation steps.
 """
 ```
 
@@ -298,17 +321,17 @@ agent-menu
 
 ```bash
 # Old output
-cat outgoing/result_YYYY-MM-DD_HH-MM-SS.json | jq .qa_output.verdict
+cat outgoing/result_YYYY-MM-DD_HH-MM-SS.json | jq .qa.verdict
 
 # New output (will be newer timestamp)
 ls -lt outgoing/
-cat outgoing/result_YYYY-MM-DD_HH-MM-SS.json | jq .qa_output.verdict
+cat outgoing/result_YYYY-MM-DD_HH-MM-SS.json | jq .qa.verdict
 ```
 
 **Ask:** "What changed? Is the verdict different?"
 
 **Likely outcomes:**
-- Stricter QA → More "NEEDS_WORK" verdicts
+- Stricter QA → More "fail" verdicts
 - Security PM → More security-related acceptance criteria
 - Performance Dev → Code includes optimization comments
 
@@ -351,10 +374,10 @@ agent-menu
 **Show both outputs side-by-side:**
 ```bash
 # Mock issue (clean, structured)
-cat outgoing/result_*mock*.json | jq .issue.description
+cat outgoing/result_*mock*.json | jq .issue.body
 
 # GitHub issue (messy, might have markdown, links, @mentions)
-cat outgoing/result_*github*.json | jq .issue.description
+cat outgoing/result_*github*.json | jq .issue.body
 ```
 
 **Ask:** "How did the agents handle the messy real data?"

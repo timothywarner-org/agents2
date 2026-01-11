@@ -47,13 +47,13 @@ State: { issue, pm_output, dev_output, qa_output }
 
 ### Code Walkthrough: The State
 
-**Show:** `src/agent_mvp/pipeline/graph.py` (Lines 40-65)
+**Show:** `src/agent_mvp/pipeline/graph.py` (Lines 40-75)
 
 ```bash
 code src/agent_mvp/pipeline/graph.py
 ```
 
-**Read aloud (Lines 44-55):**
+**Read aloud (Lines 44-70):**
 ```python
 class PipelineState(TypedDict, total=False):
     """State passed through the LangGraph pipeline."""
@@ -61,15 +61,22 @@ class PipelineState(TypedDict, total=False):
     # Run metadata
     run_id: str
     start_time: float
+    source_file: Optional[str]
 
     # Pipeline data
-    issue: dict
-    pm_output: dict
-    dev_output: dict
-    qa_output: dict
+    issue: Optional[dict]
+    pm_output: Optional[dict]
+    dev_output: Optional[dict]
+    qa_output: Optional[dict]
+
+    # Token tracking
+    token_usages: list[dict]
 
     # Error handling
     error: Optional[str]
+
+    # Final result cache
+    result: Optional[dict]
 ```
 
 **Say:** "This is the bucket that gets passed from agent to agent."
@@ -77,7 +84,7 @@ class PipelineState(TypedDict, total=False):
 **Ask:** "What happens when PM finishes?"
 - **Answer:** It adds `pm_output` to the state, then passes the whole state to Dev
 
-**Key Point:** "Each agent READS the whole state but only WRITES to its own field."
+**Key Point:** "Each agent reads the whole state, writes to its slice, and appends token usage for later cost reporting."
 
 ---
 
@@ -85,38 +92,50 @@ class PipelineState(TypedDict, total=False):
 
 **Show:** `src/agent_mvp/pipeline/graph.py` (Lines 95-145)
 
-**Read aloud (Lines 100-125):**
+**Read aloud (Lines 100-160):**
 ```python
 def pm_node(state: PipelineState) -> PipelineState:
-    """PM agent analyzes the issue and creates a plan."""
     logger = get_pipeline_logger()
     logger.node_enter("pm")
 
     if state.get("error"):
-        return state  # Skip if previous step errored
+        return state
 
     try:
         config = get_config()
         llm = config.get_llm()
-
-        # Parse issue
         issue = Issue(**state["issue"])
-
-        # Create prompt
         prompt = format_pm_prompt(issue)
 
-        # Call LLM
+        logger.agent_message("pm", "Analyzing issue and creating plan...")
         response = llm.invoke([
             {"role": "system", "content": PM_SYSTEM_PROMPT},
             {"role": "user", "content": prompt},
         ])
 
-        # Parse response
-        pm_data = _extract_json(response.content)
-        pm_output = PMOutput(**pm_data)
+        token_usage = extract_token_usage(response, config.llm_model)
+        token_usages = state.get("token_usages", [])
+        if token_usage:
+            agent_tokens = AgentTokens(agent_name="PM", usage=token_usage)
+            token_usages.append(agent_tokens.model_dump())
 
-        # Update state
-        return {**state, "pm_output": pm_output.model_dump()}
+        pm_data = _extract_json(response.content)
+        if pm_data is None:
+            logger.warning("PM response was not valid JSON, using fallback")
+            pm_data = {
+                "summary": response.content[:500],
+                "acceptance_criteria": ["Review PM response manually"],
+                "plan": ["Parse PM output and refine"],
+                "assumptions": ["LLM response format issue"],
+            }
+
+        pm_output = PMOutput(**pm_data)
+        logger.agent_message("pm", f"Created {len(pm_output.plan)} plan steps")
+        return {
+            **state,
+            "pm_output": pm_output.model_dump(),
+            "token_usages": token_usages,
+        }
 
     except Exception as e:
         return {**state, "error": f"PM agent failed: {e}"}
@@ -124,23 +143,25 @@ def pm_node(state: PipelineState) -> PipelineState:
 
 **Say:** "Let's break this down:"
 
-**Lines 103-105:** Error checking
+**Lines 109-111:** Error checking
 - If a previous agent failed, skip this one
 
-**Lines 107-109:** Get the LLM
+**Lines 113-117:** Get the LLM
 - Uses config we set in Hour 2
 
-**Lines 112-115:** Parse and validate input
+**Lines 118-120:** Parse and validate input
 - Issue(**state["issue"]) ensures data is correct
 
-**Lines 118-122:** Call the LLM
+**Lines 123-132:** Call the LLM
 - This is the $$ moment—API call to Anthropic/OpenAI
 
-**Lines 125-126:** Validate output
-- PMOutput(**pm_data) ensures response matches schema
+**Lines 134-141:** Token tracking & fallback
+- `extract_token_usage` stores usage for later cost reporting
+- If the LLM forgets JSON, we fall back to a safe placeholder
 
-**Lines 129:** Update state
+**Lines 143-149:** Update state
 - `{**state, "pm_output": ...}` adds PM's work to the bucket
+- Token usage list travels with the state to finalize
 
 **Key Point:** "Every node follows this pattern: Validate input → Call LLM → Validate output → Update state"
 
@@ -380,58 +401,42 @@ builder.add_conditional_edges("pm", should_run_qa)
 
 ---
 
-### Extension 3: Add Cost Tracking
+### Extension 3: Surface Token Costs
 
-**Say:** "Let's track how much each run costs."
+**Say:** "Token tracking already runs automatically—let's surface it in a new way."
 
-**Step 1: Add cost calculation (in `models.py`)**
+**Step 1: Inspect the utilities**
 
-```python
-class RunMetadata(BaseModel):
-    run_id: str
-    start_time: float
-    end_time: float
-
-    # New fields
-    pm_tokens: int
-    dev_tokens: int
-    qa_tokens: int
-    total_cost: float
+```bash
+code src/agent_mvp/util/token_tracking.py
 ```
 
-**Step 2: Calculate in each node**
+**Point out:** `aggregate_pipeline_tokens` combines per-agent usage, and `format_token_summary` prints a nice table (called from `finalize_node`).
+
+**Step 2: Customize the summary**
 
 ```python
-# In pm_node, after LLM call
-response = llm.invoke(...)
-
-# Count tokens (anthropic example)
-input_tokens = response.response_metadata.get("usage", {}).get("input_tokens", 0)
-output_tokens = response.response_metadata.get("usage", {}).get("output_tokens", 0)
-
-# Store in state
-return {
-    **state,
-    "pm_output": pm_output.model_dump(),
-    "pm_tokens": input_tokens + output_tokens
-}
+def format_token_summary(pipeline_tokens: PipelineTokens) -> str:
+    lines = ["Token Usage Summary"]
+    for agent in pipeline_tokens.agents:
+        cost = agent.usage.estimated_cost_usd or 0.0
+        lines.append(f"- {agent.agent_name}: {agent.usage.total_tokens} tokens (${cost:.4f})")
+    lines.append(f"Total: {pipeline_tokens.total_tokens} tokens (${pipeline_tokens.estimated_total_cost_usd:.4f})")
+    return "\n".join(lines)
 ```
 
-**Step 3: Calculate cost in finalize_node**
+**Step 3: Persist it somewhere**
 
 ```python
-# Anthropic pricing (as of 2026)
-COST_PER_1M_INPUT = 3.00  # Claude Sonnet 4
-COST_PER_1M_OUTPUT = 15.00
-
-total_tokens = state["pm_tokens"] + state["dev_tokens"] + state["qa_tokens"]
-total_cost = (total_tokens / 1_000_000) * COST_PER_1M_INPUT
+# In finalize_node, after PipelineResult.create(...)
+result = PipelineResult.create(...)
+result.next_steps.insert(0, format_token_summary(pipeline_tokens))
 ```
 
 **Show the output:**
 ```bash
-cat outgoing/result_*.json | jq .metadata.total_cost
-# Output: 0.045 (about 4.5 cents per issue)
+cat outgoing/result_*.json | jq .metadata.token_usage
+# Includes per-agent tokens, totals, and estimated cost
 ```
 
 ---

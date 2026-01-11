@@ -166,6 +166,7 @@ def finalize_node(state: PipelineState) -> PipelineState:
 2. **Watch the State Build**
    - Add watch: `state.keys()`
    - Step through and see: `issue` → `pm_output` → `dev_output` → `qa_output` → `result`
+   - When `result` exists, inspect `result["pm"]`, `result["dev"]`, and `result["qa"]` for the final outputs and `pass|fail|needs-human` verdict
 
 3. **Inspect Token Costs**
    - Watch `state["token_usages"]` grow with each agent

@@ -94,6 +94,7 @@ Click dropdown at top of Debug panel, select:
    - Then: `dev_output` appears
    - Then: `qa_output` appears
    - Finally: `result` appears
+   - Inspect `result["pm"]`, `result["dev"]`, and `result["qa"]` to see final outputs and verdict (`pass`, `fail`, or `needs-human`)
 
 ---
 
@@ -151,6 +152,7 @@ state.keys()                           # What's in state?
 state["pm_output"]                     # See PM output
 len(state.get("token_usages", []))     # How many agents done?
 token_usage.total_tokens               # Total tokens for this agent
+result["qa"]["verdict"]                # Final pass/fail/needs-human verdict
 ```
 
 ### 3. Watch Expressions (Auto-Update)
@@ -174,9 +176,9 @@ Press `Ctrl+Shift+D` → dropdown at top → choose:
 | Config | When to Use |
 |--------|-------------|
 | 🎯 **Interactive Menu** | Test the CLI menu system |
-| 🚀 **Run Once (Mock Issue 001)** | Full pipeline with issue about bug fix |
-| 🚀 **Run Once (Mock Issue 002)** | Full pipeline with feature request |
-| 🚀 **Run Once (Mock Issue 003)** | Full pipeline with different issue |
+| 🚀 **Run Once (Mock Issue 001)** | Full pipeline with CLI validation issue |
+| 🚀 **Run Once (Mock Issue 002)** | Full pipeline with MCP priority fix |
+| 🚀 **Run Once (Mock Issue 003)** | Full pipeline with watcher stability issue |
 | 👁️ **Folder Watcher** | Test auto-processing of dropped files |
 | 🔧 **MCP Server** | Debug MCP tools/resources |
 | 🧪 **Run Tests (All)** | Debug all tests |

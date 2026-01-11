@@ -75,17 +75,46 @@ When the inspector opens, you'll see:
 4. View JSON response:
    ```json
    {
-     "status": "success",
-     "mock_issues": [
-       {
-         "filename": "issue_001.json",
-         "title": "Add user authentication",
-         "priority": "high",
-         "path": "/path/to/issue_001.json"
-       },
-       ...
-     ],
-     "count": 3
+      "status": "success",
+      "mock_issues": [
+         {
+            "filename": "issue_001.json",
+            "title": "CLI: add 'validate-issue' command for issue JSON files",
+            "priority": "unknown",
+            "path": "/path/to/issue_001.json"
+         },
+         {
+            "filename": "issue_002.json",
+            "title": "MCP: list_mock_issues should derive priority from labels (schema-safe)",
+            "priority": "unknown",
+            "path": "/path/to/issue_002.json"
+         },
+         {
+            "filename": "issue_003.json",
+            "title": "Watcher: avoid processing partially-written incoming JSON files (Windows-safe)",
+            "priority": "unknown",
+            "path": "/path/to/issue_003.json"
+         },
+         {
+            "filename": "issue_004.json",
+            "title": "Token tracking: handle missing usage data and keep totals consistent",
+            "priority": "unknown",
+            "path": "/path/to/issue_004.json"
+         },
+         {
+            "filename": "issue_005.json",
+            "title": "Schema: allow optional issue metadata while keeping strict validation",
+            "priority": "unknown",
+            "path": "/path/to/issue_005.json"
+         },
+         {
+            "filename": "issue_006.json",
+            "title": "Pipeline UX: add --dry-run and clarify output directory behavior",
+            "priority": "unknown",
+            "path": "/path/to/issue_006.json"
+         }
+      ],
+      "count": 6
    }
    ```
 

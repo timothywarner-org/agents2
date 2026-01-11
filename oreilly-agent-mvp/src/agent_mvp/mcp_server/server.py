@@ -106,7 +106,7 @@ async def list_mock_issues(ctx: Context[ServerSession, None] = None) -> dict[str
     if not mock_dir.exists():
         return {"status": "error", "error": "mock_issues/ directory not found"}
 
-    mock_files = sorted(mock_dir.glob("*.json"))
+    mock_files = sorted(mock_dir.glob("issue_*.json"))
 
     issues = []
     for file in mock_files:

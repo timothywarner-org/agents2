@@ -136,7 +136,8 @@ finalize_node: return {**state, "result": ...}        # Line ~340
 
 # At each stop, inspect state keys:
 Debug Console: state.keys()
-# See progression: issue → pm → dev → qa → result
+# See progression: issue → pm_output → dev_output → qa_output → result
+# Final result keys: result["pm"], result["dev"], result["qa"]
 ```
 
 ### Pattern 2: Token Accumulation
