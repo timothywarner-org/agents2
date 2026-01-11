@@ -199,14 +199,15 @@ async def run_agent_pipeline(
             await ctx.report_progress(0.6, 1.0, "Running Dev agent...")
             await ctx.report_progress(0.8, 1.0, "Running QA agent...")
 
-        # Save result
+        # Save result (JSON + HTML)
         output_dir = config.outgoing_dir
         output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = save_result(result, output_dir)
+        json_path, html_path = save_result(result, output_dir)
 
         if ctx:
             await ctx.report_progress(1.0, 1.0, "Pipeline complete")
-            await ctx.info(f"Results saved to {output_path}")
+            await ctx.info(f"Results saved to {json_path}")
+            await ctx.info(f"HTML report: file://{html_path.resolve()}")
 
         return {
             "status": "success",
@@ -214,11 +215,13 @@ async def run_agent_pipeline(
             "pm_output": result.pm.model_dump(),
             "dev_output": result.dev.model_dump(),
             "qa_output": result.qa.model_dump(),
-            "output_file": str(output_path),
+            "output_file": str(json_path),
+            "html_report": str(html_path),
+            "html_report_url": f"file://{html_path.resolve()}",
             "token_usage": result.metadata.token_usage.model_dump()
             if result.metadata and result.metadata.token_usage
             else None,
-            "report": format_run_report(result, output_path),
+            "report": format_run_report(result, json_path, html_path),
         }
 
     except Exception as e:
@@ -258,23 +261,26 @@ async def process_issue_file(
 
         result = run_pipeline(issue, config, source_file=str(issue_file))
 
-        # Save result
+        # Save result (JSON + HTML)
         output_dir = config.outgoing_dir
         output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = save_result(result, output_dir)
+        json_path, html_path = save_result(result, output_dir)
 
         if ctx:
-            await ctx.info(f"Pipeline complete. Output: {output_path}")
+            await ctx.info(f"Pipeline complete. Output: {json_path}")
+            await ctx.info(f"HTML report: file://{html_path.resolve()}")
 
         return {
             "status": "success",
             "run_id": result.run_id,
             "verdict": result.qa.verdict.value,
-            "output_file": str(output_path),
+            "output_file": str(json_path),
+            "html_report": str(html_path),
+            "html_report_url": f"file://{html_path.resolve()}",
             "token_usage": result.metadata.token_usage.model_dump()
             if result.metadata and result.metadata.token_usage
             else None,
-            "report": format_run_report(result, output_path),
+            "report": format_run_report(result, json_path, html_path),
         }
 
     except Exception as e:

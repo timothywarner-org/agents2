@@ -2,6 +2,8 @@
 
 **No Function Keys? No Problem!** Use Command Palette (`Ctrl+Shift+P`) for everything.
 
+> **Important:** Open `C:\github\agents2\` in VSCode (NOT the `oreilly-agent-mvp/` subfolder). All paths automatically resolve to the subfolder.
+
 ---
 
 ## 🚀 Quick Start (3 Steps)
@@ -14,7 +16,7 @@
 ### Step 2: Choose What to Debug
 Click dropdown at top of Debug panel, select:
 - **"📊 Pipeline Graph (Step Through)"** ← START HERE (pauses immediately)
-- **"🚀 Run Once (Mock Issue 001)"** ← Run full pipeline
+- **"🚀 Run Once (Mock Issue 001-006)"** ← Run full pipeline with different mock issues
 - **"🎯 Interactive Menu"** ← Test menu system
 
 ### Step 3: Start Debugging
@@ -60,7 +62,7 @@ Click dropdown at top of Debug panel, select:
 
 ### Flow 1: "I want to understand how it works"
 
-1. **Open file:** `src/agent_mvp/pipeline/graph.py`
+1. **Open file:** `oreilly-agent-mvp/src/agent_mvp/pipeline/graph.py`
 2. **Set breakpoint:** Click gutter next to line 100 (in `pm_node`)
 3. **Start:** Command Palette → `Debug: Start Debugging` → Select **"🚀 Run Once (Mock Issue 001)"**
 4. **When it stops:**
@@ -70,7 +72,7 @@ Click dropdown at top of Debug panel, select:
 
 ### Flow 2: "I want to see token costs build up"
 
-**Set 4 breakpoints in `src/agent_mvp/pipeline/graph.py`:**
+**Set 4 breakpoints in `oreilly-agent-mvp/src/agent_mvp/pipeline/graph.py`:**
 - Line ~120: After PM calls LLM
 - Line ~190: After Dev calls LLM
 - Line ~260: After QA calls LLM
@@ -102,7 +104,7 @@ Click dropdown at top of Debug panel, select:
 
 ### See Agent Execution
 ```
-src/agent_mvp/pipeline/graph.py
+oreilly-agent-mvp/src/agent_mvp/pipeline/graph.py
 
 Line ~100  - pm_node starts
 Line ~120  - PM got LLM response (see tokens here)
@@ -122,7 +124,7 @@ Line ~320  - Tokens aggregated (see total cost)
 
 ### See Token Calculation
 ```
-src/agent_mvp/util/token_tracking.py
+oreilly-agent-mvp/src/agent_mvp/util/token_tracking.py
 
 Line ~40   - Token extraction from LLM response
 Line ~90   - Cost calculation (see pricing lookup)
@@ -169,22 +171,25 @@ sum(t["usage"]["total_tokens"] for t in state.get("token_usages", []))
 
 ---
 
-## 🎨 Available Configurations
+## 🎨 Available Configurations (13 Total)
 
 Press `Ctrl+Shift+D` → dropdown at top → choose:
 
-| Config | When to Use |
-|--------|-------------|
-| 🎯 **Interactive Menu** | Test the CLI menu system |
-| 🚀 **Run Once (Mock Issue 001)** | Full pipeline with CLI validation issue |
-| 🚀 **Run Once (Mock Issue 002)** | Full pipeline with MCP priority fix |
-| 🚀 **Run Once (Mock Issue 003)** | Full pipeline with watcher stability issue |
-| 👁️ **Folder Watcher** | Test auto-processing of dropped files |
-| 🔧 **MCP Server** | Debug MCP tools/resources |
-| 🧪 **Run Tests (All)** | Debug all tests |
-| 🧪 **Run Tests (Token Tracking)** | Debug token tracking tests |
-| 🔍 **Debug Current File** | Run whatever file is open |
-| 📊 **Pipeline Graph (Step Through)** | ⭐ START HERE - Pauses at beginning |
+| # | Config | When to Use |
+|---|--------|-------------|
+| 1 | 🎯 **Interactive Menu** | Test the CLI menu system |
+| 2 | 🚀 **Run Once (Mock Issue 001)** | API Rate Limiting feature (timothywarner-org/agents2#101) |
+| 3 | 🚀 **Run Once (Mock Issue 002)** | User Authentication enhancement (timothywarner-org/agents2#102) |
+| 4 | 🚀 **Run Once (Mock Issue 003)** | Data Export functionality (timothywarner-org/agents2#103) |
+| 5 | 🚀 **Run Once (Mock Issue 004)** | Dashboard Performance (timothywarner-org/agents2#104) |
+| 6 | 🚀 **Run Once (Mock Issue 005)** | Email Notification system (timothywarner-org/agents2#105) |
+| 7 | 🚀 **Run Once (Mock Issue 006)** | Search Functionality (timothywarner-org/agents2#106) |
+| 8 | 👁️ **Folder Watcher** | Test auto-processing of dropped files |
+| 9 | 🔧 **MCP Server** | Debug MCP tools/resources |
+| 10 | 🧪 **Run Tests (All)** | Debug all tests |
+| 11 | 🧪 **Run Tests (Token Tracking)** | Debug token tracking tests |
+| 12 | 🔍 **Debug Current File** | Run whatever file is open |
+| 13 | 📊 **Pipeline Graph (Step Through)** | ⭐ START HERE - Pauses at beginning |
 
 ---
 
@@ -234,7 +239,7 @@ Press `Ctrl+Shift+D` → dropdown at top → choose:
 4. Goal: See the flow
 
 **Day 2: Set Breakpoints**
-1. Open `src/agent_mvp/pipeline/graph.py`
+1. Open `oreilly-agent-mvp/src/agent_mvp/pipeline/graph.py`
 2. Set breakpoint at line 120 (after PM LLM call)
 3. Run **"🚀 Run Once (Mock Issue 001)"**
 4. When it stops, look at `token_usage`
@@ -274,7 +279,7 @@ Press `Ctrl+Shift+D` → dropdown at top → choose:
 
 ## ✅ Checklist for First Debug Session
 
-- [ ] Open `oreilly-agent-mvp/` folder in VSCode
+- [ ] Open `C:\github\agents2\` folder in VSCode (NOT the subfolder!)
 - [ ] Press `Ctrl+Shift+D` (or click bug icon)
 - [ ] Select **"📊 Pipeline Graph (Step Through)"** from dropdown
 - [ ] Press `F5` (or Command Palette → `Debug: Start Debugging`)
@@ -284,6 +289,24 @@ Press `Ctrl+Shift+D` → dropdown at top → choose:
 - [ ] Press `F5` to finish (or Command Palette → `Debug: Continue`)
 
 **You did it!** 🎉
+
+---
+
+## 🔧 Troubleshooting
+
+**"Module not found" errors?**
+- Make sure you opened `agents2/` (NOT `oreilly-agent-mvp/`) in VSCode
+- The PYTHONPATH is set automatically by launch configurations
+
+**Unicode/encoding errors on Windows?**
+- The launch.json includes `PYTHONIOENCODING: utf-8` (already configured)
+- If you still see encoding errors, ensure you're using the provided launch configs
+- Rich console box characters may cause issues outside the integrated terminal
+
+**Breakpoint not being hit?**
+- Ensure debugging is actually started (green play button or F5)
+- Try setting breakpoint earlier in the file
+- Use Command Palette → `Debug: Restart`
 
 ---
 

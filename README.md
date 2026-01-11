@@ -25,6 +25,15 @@ A 4-hour hands-on workshop teaching you how to build, orchestrate, and deploy mu
 - Building multi-agent systems with LangGraph and CrewAI
 - Real-world orchestration patterns you can take to work Monday
 
+### 🔧 Tech Stack Snapshot
+- **LangGraph** — Orchestrates the PM→Dev→QA state machine that coordinates agent hand-offs.
+- **CrewAI** — Provides the collaborative crew framework behind the PM, Dev, and QA personas.
+- **FastMCP** — Exposes pipeline tools and data sources through a Model Context Protocol server.
+- **Pydantic** — Validates structured issue inputs and pipeline outputs with strict models.
+- **Rich** — Produces readable, structured logs for workshop demos and debugging.
+- **SQLite** — Stores run history and analytics with a lightweight embedded database.
+- **pytest** — Powers the automated regression suite learners can extend.
+
 **What You'll Build:**
 - A 3-agent issue triage system (PM → Dev → QA)
 - GitHub integration for real issues

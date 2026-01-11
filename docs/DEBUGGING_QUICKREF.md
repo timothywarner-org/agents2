@@ -1,21 +1,35 @@
 # 🐛 VSCode Debugging Quick Reference
 
+> **Important:** Open `C:\github\agents2\` in VSCode (NOT the `oreilly-agent-mvp/` subfolder). All paths automatically resolve to the subfolder.
+
 ## Launch Configurations (Press F5)
 
-| Config | Purpose | Key Breakpoint Locations |
-|--------|---------|-------------------------|
-| 🎯 **Interactive Menu** | Test user flows & menu navigation | `cli/interactive_menu.py` lines 20-100 |
-| 🚀 **Run Once (001/002/003)** | Full pipeline with specific mock | `pipeline/graph.py` nodes (60, 100, 170, 240, 300) |
-| 👁️ **Folder Watcher** | Event-driven file processing | `watcher/process_file.py` lines 20-50 |
-| 🔧 **MCP Server** | MCP tools/resources testing | `mcp_server/server.py` tool functions |
-| 🧪 **Run Tests** | TDD & test debugging | Test files or implementation |
-| 📊 **Pipeline Graph (Step Through)** | **START HERE** - Pauses immediately | Entry point, then step line-by-line |
+| # | Config | Purpose | Key Breakpoint Locations |
+|---|--------|---------|-------------------------|
+| 1 | 🎯 **Interactive Menu** | Test user flows & menu navigation | `oreilly-agent-mvp/src/agent_mvp/cli/interactive_menu.py` |
+| 2-7 | 🚀 **Run Once (001-006)** | Full pipeline with specific mock | `oreilly-agent-mvp/src/agent_mvp/pipeline/graph.py` nodes |
+| 8 | 👁️ **Folder Watcher** | Event-driven file processing | `oreilly-agent-mvp/src/agent_mvp/watcher/process_file.py` |
+| 9 | 🔧 **MCP Server** | MCP tools/resources testing | `oreilly-agent-mvp/src/agent_mvp/mcp_server/server.py` |
+| 10-11 | 🧪 **Run Tests** | TDD & test debugging | Test files or implementation |
+| 12 | 🔍 **Debug Current File** | Run whatever file is open | Your open file |
+| 13 | 📊 **Pipeline Graph (Step Through)** | **START HERE** - Pauses immediately | Entry point, then step line-by-line |
+
+### Mock Issues Available
+
+| Issue | Description | GitHub Issue |
+|-------|-------------|--------------|
+| 001 | API Rate Limiting | timothywarner-org/agents2#101 |
+| 002 | User Authentication | timothywarner-org/agents2#102 |
+| 003 | Data Export | timothywarner-org/agents2#103 |
+| 004 | Dashboard Performance | timothywarner-org/agents2#104 |
+| 005 | Email Notifications | timothywarner-org/agents2#105 |
+| 006 | Search Functionality | timothywarner-org/agents2#106 |
 
 ## Essential Breakpoints
 
 ### See Data Flow
 ```python
-# src/agent_mvp/pipeline/graph.py
+# oreilly-agent-mvp/src/agent_mvp/pipeline/graph.py
 
 def pm_node(state):
     response = llm.invoke([...])
@@ -30,7 +44,7 @@ def finalize_node(state):
 
 ### See Token Costs
 ```python
-# src/agent_mvp/util/token_tracking.py
+# oreilly-agent-mvp/src/agent_mvp/util/token_tracking.py
 
 def calculate_cost(input_tokens, output_tokens, model_name):
     pricing = PRICING[key]                            # ⬅️ BREAKPOINT 4
@@ -192,11 +206,20 @@ calculate_cost() → PRICING dict lookup → cost math → return
 - Ensure execution is paused at breakpoint
 - Try simpler expression first
 
+**Unicode/encoding errors on Windows?**
+- Launch.json includes `PYTHONIOENCODING: utf-8` (already set)
+- If you still see encoding errors, ensure you're using the provided launch configs
+- Rich console box characters may cause issues outside the integrated terminal
+
+**"Module not found" errors?**
+- Make sure you opened `agents2/` (NOT `oreilly-agent-mvp/`) in VSCode
+- The PYTHONPATH is set automatically by launch configurations
+
 ## Quick Start
 
 **Never debugged before? Start here:**
 
-1. Open `oreilly-agent-mvp/` in VSCode
+1. Open `C:\github\agents2\` in VSCode (NOT the subfolder!)
 2. Press **F5**
 3. Select **"📊 Pipeline Graph (Step Through)"**
 4. When it pauses, open Variables pane (left sidebar)

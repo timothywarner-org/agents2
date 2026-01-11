@@ -1,21 +1,5 @@
 {
-  // Claude Code MCP Configuration Template
-  //
-  // This file configures MCP servers for Claude Code CLI.
-  // Copy to your user config or modify for your setup.
-  //
-  // IMPORTANT: Do NOT commit secrets to this file!
-  // Use environment variable expansion: ${ENV_VAR_NAME}
-  //
-  // For GitHub MCP, you need:
-  // 1. GITHUB_TOKEN environment variable set
-  // 2. The @anthropic/github-mcp-server package installed (or use remote)
-  //
-  // See: https://github.com/anthropics/claude-code for MCP docs
-
   "mcpServers": {
-    // GitHub MCP Server - enables GitHub tools in Claude Code
-    // Option 1: Using npx (requires Node.js)
     "github": {
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-github"],
@@ -23,18 +7,5 @@
         "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
       }
     }
-
-    // Option 2: Using Docker (alternative)
-    // "github-docker": {
-    //   "command": "docker",
-    //   "args": [
-    //     "run", "-i", "--rm",
-    //     "-e", "GITHUB_PERSONAL_ACCESS_TOKEN",
-    //     "ghcr.io/modelcontextprotocol/servers/github"
-    //   ],
-    //   "env": {
-    //     "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
-    //   }
-    // }
   }
 }
