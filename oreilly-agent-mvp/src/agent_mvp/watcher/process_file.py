@@ -93,8 +93,8 @@ def process_issue_file(
             source_file=str(processed_path),
         )
 
-        # Save result to file
-        output_path = save_result(
+        # Save result to file (JSON + HTML)
+        json_path, html_path = save_result(
             result=result,
             output_dir=config.outgoing_dir,
             write_files=write_dev_files,
@@ -106,18 +106,18 @@ def process_issue_file(
         store.save_result(result)
         logger.file_operation('Persisted to database', str(db_path))
 
-        # Print run report with token usage
-        print("\n" + format_run_report(result, output_path))
+        # Print run report with token usage and HTML link
+        print("\n" + format_run_report(result, json_path, html_path))
 
         # Log completion
         logger.complete_run(
             run_id=result.run_id,
             issue_id=result.issue.issue_id,
             verdict=result.qa.verdict.value,
-            output_file=str(output_path),
+            output_file=str(json_path),
         )
 
-        return output_path
+        return json_path
 
     except Exception as e:
         logger.error(f"Pipeline failed: {e}", e)

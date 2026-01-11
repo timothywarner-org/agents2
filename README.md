@@ -1,6 +1,17 @@
-# **Build Production-Ready AI Agents**
-### O'Reilly Live Learning Course
-**[TechTrainerTim.com](https://TechTrainerTim.com)**
+# Build Production-Ready AI Agents
+
+<p align="center">
+   <img src="images/cover.png" alt="Build Production-Ready AI Agents cover" width="360">
+</p>
+
+**O'Reilly Live Learning Course** | 4 Hours | LangGraph · CrewAI · MCP
+
+[![Website TechTrainerTim.com](https://img.shields.io/badge/Website-TechTrainerTim.com-0a66c2)](https://techtrainertim.com)
+[![LinkedIn timothywarner](https://img.shields.io/badge/LinkedIn-timothywarner-0a66c2?logo=linkedin)](https://www.linkedin.com/in/timothywarner/)
+[![GitHub timothywarner-org](https://img.shields.io/badge/GitHub-timothywarner--org-181717?logo=github)](https://github.com/timothywarner-org)
+[![O'Reilly Author Page](https://img.shields.io/badge/O'Reilly-Author%20Page-cf2f1d)](https://learning.oreilly.com/search/?query=Tim%20Warner)
+
+**Contact:** [Website](https://techtrainertim.com) · [LinkedIn](https://www.linkedin.com/in/timothywarner/) · [GitHub](https://github.com/timothywarner-org) · [O'Reilly](https://learning.oreilly.com/search/?query=Tim%20Warner)
 
 ---
 
@@ -243,6 +254,7 @@ By the end of this course, you'll be able to:
 
 **Documentation:**
 - [Full technical docs](oreilly-agent-mvp/README.md)
+- [Azure deployment architecture](docs/azure-architecture.md)
 - [LangGraph Documentation](https://langchain-ai.github.io/langgraph/)
 - [CrewAI Documentation](https://docs.crewai.com/)
 

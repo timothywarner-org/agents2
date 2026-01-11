@@ -313,11 +313,15 @@ def _get_crew_llm() -> LLM:
             api_key=config.anthropic_api_key,
         )
     elif config.llm_provider == LLMProvider.OPENAI:
-        return LLM(
-            model=f"openai/{config.llm_model}",
-            temperature=config.llm_temperature,
-            api_key=config.openai_api_key,
-        )
+        kwargs = {
+            "model": f"openai/{config.llm_model}",
+            "temperature": config.llm_temperature,
+            "api_key": config.openai_api_key,
+        }
+        # Add base_url for OpenAI-compatible APIs (DeepSeek, etc.)
+        if config.openai_base_url:
+            kwargs["base_url"] = config.openai_base_url
+        return LLM(**kwargs)
     elif config.llm_provider == LLMProvider.AZURE:
         # Azure OpenAI through CrewAI
         return LLM(

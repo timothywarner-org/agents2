@@ -1,7 +1,12 @@
 """Interactive CLI menu for the O'Reilly Agent MVP."""
 
 import json
+import os
+import shutil
+import subprocess
 import sys
+import time
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional
 
@@ -13,6 +18,8 @@ from ..pipeline.run_once import run_pipeline, save_result
 from ..util.reporting import format_run_report
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+VENV_BIN = PROJECT_ROOT / ".venv" / "Scripts"
+DEFAULT_PROXY_PORT = "6277"
 
 
 def display_menu() -> None:
@@ -20,11 +27,11 @@ def display_menu() -> None:
     print("\n" + "=" * 50)
     print("O'Reilly Agent MVP - Interactive Menu")
     print("=" * 50)
+    print("\nShow off the multi-agent GitHub issue triage and resolution pipeline.\n")
     print("\n1. Request an issue from GitHub")
     print("2. Load a mock issue")
     print("3. Start the folder watcher")
-    print("4. Start MCP server")
-    print("5. Start MCP Inspector (web UI)")
+    print("4. Start MCP Server & Inspector (web UI)")
     print("q. Quit")
     print()
 
@@ -97,46 +104,154 @@ def handle_mock_issue() -> Optional[Path]:
 
 
 def handle_watcher() -> None:
-    """Start the folder watcher."""
-    from ..watcher.folder_watcher import main as run_watcher
+    """Start the folder watcher with optional demo trigger."""
+    import random
+    import threading
+
+    from ..watcher.folder_watcher import FolderWatcher
 
     print("\n--- Folder Watcher ---")
-    print("Starting watcher...")
-    print(f"Drop issue JSON files into {PROJECT_ROOT / 'incoming'} to trigger processing")
+
+    incoming_dir = PROJECT_ROOT / "incoming"
+    incoming_dir.mkdir(exist_ok=True)
+
+    # Offer to trigger a demo by copying a mock issue
+    print("\nOptions:")
+    print("  1. Start watcher only (wait for files to be dropped)")
+    print("  2. Start watcher + auto-trigger with a random mock issue (demo mode)")
+    print()
+    demo_choice = input("Choose mode (1 or 2, default=2): ").strip()
+
+    auto_trigger = demo_choice != "1"
+
+    print()
+    print(f"Watching: {incoming_dir}")
     print("Press Ctrl+C to stop\n")
+
+    # Setup config, logging, and watcher
+    config = Config.from_env(PROJECT_ROOT)
+    setup_logging(level=config.log_level)
+    watcher = FolderWatcher(
+        config=config,
+        poll_interval=3.0,
+        write_dev_files=False,
+        verbose_polling=True,
+    )
+
+    def delayed_copy():
+        """Copy a mock issue after a short delay to demonstrate the flow."""
+        time.sleep(5)  # Wait 5 seconds so user can see initial polling
+        mock_dir = PROJECT_ROOT / "mock_issues"
+        mock_files = [f for f in mock_dir.glob("issue_*.json")]
+        if mock_files:
+            selected = random.choice(mock_files)
+            dest = incoming_dir / f"demo_{selected.name}"
+            shutil.copy(selected, dest)
+            print(f"\n[Demo] Copied {selected.name} -> incoming/{dest.name}")
+            print("[Demo] Watch the pipeline process it!\n")
+
+    if auto_trigger:
+        print("[Demo mode] A mock issue will be copied in ~5 seconds...")
+        print()
+        trigger_thread = threading.Thread(target=delayed_copy, daemon=True)
+        trigger_thread.start()
+
     try:
-        run_watcher()
+        watcher.start()
     except KeyboardInterrupt:
         print("\n\nWatcher stopped.")
 
 
-def handle_mcp_server() -> None:
-    """Start the MCP server."""
-    from ..mcp_server import main as run_mcp_server
-
-    print("\n--- MCP Server ---")
-    print("Starting MCP server...")
-    print("This exposes tools, resources, and prompts via stdio transport.")
-    print("Use with Claude Desktop or VS Code Copilot.")
-    print("Press Ctrl+C to stop\n")
+@contextmanager
+def _temporary_env(overrides: dict[str, str]):
+    """Temporarily set environment variables within a context."""
+    original = {key: os.environ.get(key) for key in overrides}
     try:
-        run_mcp_server()
-    except KeyboardInterrupt:
-        print("\n\nMCP server stopped.")
+        os.environ.update(overrides)
+        yield
+    finally:
+        for key, value in original.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
 
-def handle_mcp_inspector() -> None:
-    """Start the MCP Inspector."""
-    import subprocess
-    import shutil
+def _ensure_venv_activated() -> str:
+    """Return path to venv Python, raising if missing."""
+    venv_python = PROJECT_ROOT / ".venv" / "Scripts" / "python.exe"
+    if not venv_python.exists():
+        raise FileNotFoundError(
+            "Virtual environment not found. Run scripts/setup.ps1 first."
+        )
+    os.environ.setdefault("VIRTUAL_ENV", str(PROJECT_ROOT / ".venv"))
+    os.environ["PATH"] = f"{VENV_BIN};{os.environ.get('PATH', '')}"
+    return str(venv_python)
 
-    print("\n--- MCP Inspector ---")
-    print("Starting MCP Inspector with web UI...")
-    print("This opens a browser for interactive testing of tools, resources, and prompts.")
+
+def _find_npx() -> str | None:
+    """Locate npx executable across different platforms."""
+    for candidate in ("npx", "npx.cmd", "npx.exe"):
+        path = shutil.which(candidate)
+        if path:
+            return path
+    return None
+
+
+def _find_node() -> str | None:
+    """Locate node executable."""
+    for candidate in ("node", "node.exe"):
+        path = shutil.which(candidate)
+        if path:
+            return path
+    return None
+
+
+def _is_port_in_use(port: str) -> bool:
+    """Check if a TCP port is in use by invoking netstat."""
+    try:
+        result = subprocess.run(
+            ["netstat", "-ano"], capture_output=True, text=True, check=False
+        )
+        return port in result.stdout
+    except Exception:
+        return False
+
+
+def _free_port(port: str) -> None:
+    """Attempt to free the given port by killing node.exe processes bound to it."""
+    netstat = subprocess.run(
+        ["netstat", "-ano"], capture_output=True, text=True, check=False
+    )
+    pids = set()
+    for line in netstat.stdout.splitlines():
+        if f":{port}" in line and "LISTENING" in line:
+            parts = line.split()
+            if parts:
+                pids.add(parts[-1])
+
+    for pid in pids:
+        subprocess.run(
+            ["taskkill", "/F", "/PID", pid],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+
+def handle_mcp_server_and_inspector() -> None:
+    """Start the MCP Server and Inspector together."""
+
+    print("\n--- MCP Server & Inspector ---")
+    print("Starting MCP Server with Inspector web UI...")
+    print("")
+    print("This will:")
+    print("  - Start the MCP server (exposes tools, resources, and prompts)")
+    print("  - Launch the Inspector web UI for interactive testing")
     print("")
 
     # Check if Node.js is available
-    if not shutil.which("node"):
+    if not _find_node():
         print("ERROR: Node.js not found!")
         print("")
         print("MCP Inspector requires Node.js.")
@@ -145,18 +260,48 @@ def handle_mcp_inspector() -> None:
         input("Press Enter to return to menu...")
         return
 
+    venv_python = _ensure_venv_activated()
+    npx_command = _find_npx()
+
+    if not npx_command:
+        print("ERROR: npx not found!")
+        print("")
+        print("Install Node.js 18+ or ensure your PATH includes npm's bin directory.")
+        print("")
+        input("Press Enter to return to menu...")
+        return
+
     print("Inspector will open in your browser at http://localhost:5173")
     print("Press Ctrl+C to stop\n")
 
+    proxy_port = os.environ.get("MCP_PROXY_PORT", DEFAULT_PROXY_PORT)
+    if _is_port_in_use(proxy_port):
+        print(f"Port {proxy_port} in use by another process. Attempting to free it...")
+        _free_port(proxy_port)
+        if _is_port_in_use(proxy_port):
+            print(
+                f"ERROR: Port {proxy_port} is still in use. Close other MCP Inspector instances and try again."
+            )
+            input("Press Enter to return to menu...")
+            return
+
     try:
-        subprocess.run(
-            ["npx", "@modelcontextprotocol/inspector", "python", "-m", "agent_mvp.mcp_server"],
-            check=True,
-        )
+        with _temporary_env({"DANGEROUSLY_OMIT_AUTH": "true"}):
+            subprocess.run(
+                [
+                    npx_command,
+                    "@modelcontextprotocol/inspector",
+                    venv_python,
+                    "-m",
+                    "agent_mvp.mcp_server",
+                ],
+                check=True,
+                cwd=PROJECT_ROOT,
+            )
     except KeyboardInterrupt:
-        print("\n\nMCP Inspector stopped.")
+        print("\n\nMCP Server & Inspector stopped.")
     except subprocess.CalledProcessError as e:
-        print(f"\nError starting inspector: {e}")
+        print(f"\nError starting MCP Server & Inspector: {e}")
         input("Press Enter to return to menu...")
 
 
@@ -172,7 +317,7 @@ def process_issue_file(issue_file: Path) -> None:
     output_dir = config.outgoing_dir
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    output_path = save_result(result, output_dir)
+    json_path, html_path = save_result(result, output_dir)
 
     db_path = config.project_root / "data" / "pipeline.db"
     store = SQLiteStore(db_path)
@@ -182,9 +327,9 @@ def process_issue_file(issue_file: Path) -> None:
         run_id=result.run_id,
         issue_id=result.issue.issue_id,
         verdict=result.qa.verdict.value,
-        output_file=str(output_path),
+        output_file=str(json_path),
     )
-    print("\n" + format_run_report(result, output_path))
+    print("\n" + format_run_report(result, json_path, html_path))
 
 
 def main() -> None:
@@ -224,13 +369,10 @@ def main() -> None:
             handle_watcher()
 
         elif choice == "4":
-            handle_mcp_server()
-
-        elif choice == "5":
-            handle_mcp_inspector()
+            handle_mcp_server_and_inspector()
 
         else:
-            print("\nInvalid choice. Please enter 1, 2, 3, 4, 5, or q.")
+            print("\nInvalid choice. Please enter 1, 2, 3, 4, or q.")
 
 
 if __name__ == "__main__":

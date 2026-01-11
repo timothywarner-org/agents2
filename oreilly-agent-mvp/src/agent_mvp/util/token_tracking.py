@@ -15,6 +15,11 @@ from ..models import TokenUsage, PipelineTokens, AgentTokens
 # Source: Provider pricing pages
 # NOTE: More specific models must come BEFORE generic ones for lookup matching
 PRICING = {
+    # DeepSeek (OpenAI-compatible API)
+    "deepseek-chat": {"input": 0.14, "output": 0.28},
+    "deepseek-coder": {"input": 0.14, "output": 0.28},
+    "deepseek-reasoner": {"input": 0.55, "output": 2.19},
+
     # Anthropic Claude
     "claude-3-5-sonnet-20241022": {"input": 3.00, "output": 15.00},
     "claude-3-5-sonnet-20240620": {"input": 3.00, "output": 15.00},

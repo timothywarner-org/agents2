@@ -35,6 +35,7 @@ class FolderWatcher:
         config: Config,
         poll_interval: float = 3.0,
         write_dev_files: bool = False,
+        verbose_polling: bool = True,
     ):
         """Initialize the folder watcher.
 
@@ -42,10 +43,12 @@ class FolderWatcher:
             config: Application configuration.
             poll_interval: Seconds between folder checks.
             write_dev_files: Whether to write dev files to disk.
+            verbose_polling: When True, print the poll status each cycle (default: True).
         """
         self.config = config
         self.poll_interval = poll_interval
         self.write_dev_files = write_dev_files
+        self.verbose_polling = verbose_polling
         self.logger = get_pipeline_logger()
 
         # Track files we've seen to avoid reprocessing
@@ -108,6 +111,7 @@ class FolderWatcher:
         """Check for new files and process them."""
         # Get current JSON files
         current_files = list(self.config.incoming_dir.glob("*.json"))
+        new_files = []
 
         for file_path in current_files:
             file_key = str(file_path)
@@ -123,6 +127,20 @@ class FolderWatcher:
             if not file_path.exists():
                 continue
 
+            new_files.append(file_path)
+
+        if self.verbose_polling:
+            if new_files:
+                names = ", ".join(file.name for file in new_files)
+                console.print(
+                    f"[cyan]Polling {self.config.incoming_dir} → new file(s): {names}[/]"
+                )
+            else:
+                console.print(
+                    f"[dim]Polling {self.config.incoming_dir} → no new files[/]"
+                )
+
+        for file_path in new_files:
             # Process the file
             console.rule(f"[bold cyan]New Issue File: {file_path.name}[/]")
             try:
@@ -193,14 +211,25 @@ Examples:
     if args.project_root:
         project_root = Path(args.project_root).resolve()
     else:
-        # Try to find project root by looking for pyproject.toml
         cwd = Path.cwd()
-        if (cwd / "pyproject.toml").exists():
-            project_root = cwd
-        elif (cwd.parent / "pyproject.toml").exists():
-            project_root = cwd.parent
-        else:
-            project_root = cwd
+        script_root = Path(__file__).resolve().parents[3]
+
+        candidate_roots = [
+            cwd,
+            cwd / "oreilly-agent-mvp",
+            cwd.parent,
+            cwd.parent / "oreilly-agent-mvp",
+            script_root,
+        ]
+
+        project_root = next(
+            (
+                candidate.resolve()
+                for candidate in candidate_roots
+                if candidate and (candidate / "pyproject.toml").exists()
+            ),
+            script_root,
+        )
 
     # Load config
     config = Config.from_env(project_root)

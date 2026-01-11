@@ -11,6 +11,7 @@ from ..models import PipelineResult
 def format_run_report(
     result: PipelineResult,
     output_path: Optional[Path] = None,
+    html_path: Optional[Path] = None,
 ) -> str:
     """Format a run report with status and token usage."""
     lines: list[str] = [
@@ -28,6 +29,9 @@ def format_run_report(
 
     if output_path:
         lines.append(f"Output:  {output_path}")
+
+    if html_path:
+        lines.append(f"Report:  file://{html_path.resolve()}")
 
     if result.metadata and result.metadata.duration_seconds is not None:
         lines.append(f"Time:    {result.metadata.duration_seconds:.2f}s")

@@ -22,6 +22,7 @@ from ..logging_setup import setup_logging, get_pipeline_logger, print_banner
 from ..models import Issue, PipelineResult
 from ..persistence import SQLiteStore
 from ..util.fs import safe_write_json, get_timestamped_filename
+from ..util.html_report import save_html_report
 from ..util.reporting import format_run_report
 from .graph import create_pipeline_graph, PipelineState
 
@@ -84,8 +85,8 @@ def save_result(
     result: PipelineResult,
     output_dir: Path,
     write_files: bool = False,
-) -> Path:
-    """Save the pipeline result to a file.
+) -> tuple[Path, Path]:
+    """Save the pipeline result to JSON and HTML files.
 
     Args:
         result: The pipeline result to save.
@@ -93,7 +94,7 @@ def save_result(
         write_files: Whether to also write dev files to disk.
 
     Returns:
-        Path to the saved result file.
+        Tuple of (json_path, html_path) for the saved files.
     """
     logger = get_pipeline_logger()
 
@@ -108,6 +109,10 @@ def save_result(
 
     logger.file_operation("Saved result", str(output_path))
 
+    # Generate and save HTML report
+    html_path = save_html_report(result, output_path)
+    logger.file_operation("Saved HTML report", str(html_path))
+
     # Optionally write dev files
     if write_files and result.dev.files:
         files_dir = output_dir / f"files_{issue_id_safe}"
@@ -119,7 +124,7 @@ def save_result(
             file_path.write_text(dev_file.content, encoding="utf-8")
             logger.file_operation("Wrote file", str(file_path))
 
-    return output_path
+    return output_path, html_path
 
 
 def main():
@@ -275,8 +280,8 @@ Examples:
     try:
         result = run_pipeline(issue, config, source_file)
 
-        # Save result to file
-        output_path = save_result(result, output_dir, args.write_files)
+        # Save result to file (JSON + HTML)
+        json_path, html_path = save_result(result, output_dir, args.write_files)
 
         # Persist to SQLite database
         db_path = project_root / 'data' / 'pipeline.db'
@@ -285,15 +290,14 @@ Examples:
         logger.file_operation('Persisted to database', str(db_path))
 
         # Print run report with token usage
-        print("\n" + format_run_report(result, output_path))
+        print("\n" + format_run_report(result, json_path, html_path))
 
         # Log completion
-        duration = result.run_id  # Duration is in metadata
         logger.complete_run(
             run_id=result.run_id,
             issue_id=result.issue.issue_id,
             verdict=result.qa.verdict.value,
-            output_file=str(output_path),
+            output_file=str(json_path),
         )
 
         sys.exit(0)
