@@ -1,306 +1,162 @@
-# Hour 2 Teaching Guide: Architecture & Setup
+# Hour 2 Teaching Guide: Run, Test, and Debug
 
-**Goal:** Students understand the system flow and get it running on their machines.
+**Goal:** Students run the full agent pipeline, understand how to test it, and master VSCode debugging.
 
 **Time:** 60 minutes
 
 ---
 
-## 🎬 Opening (5 minutes)
+## Opening (3 minutes)
 
 **What We're Doing This Hour:**
-1. Watch the full pipeline run (demo)
-2. Understand WHY it's built this way
-3. Get it running on YOUR machine
-4. Look at the key files (not deep diving, just awareness)
 
-**Key Message:** "You don't need to understand every line. We're building a mental model of how data flows."
+1. Run the complete PM → Dev → QA pipeline
+2. Understand the data flow through the system
+3. Write and run tests
+4. Master VSCode debugging with breakpoints
+5. Inspect state and token usage in real-time
+
+**Key Message:** "You can't fix what you can't see. Debugging agents requires understanding the state at every step."
 
 ---
 
-## 🎥 Demo: The Full Pipeline (10 minutes)
+## Run the Pipeline (15 minutes)
 
-### Setup Your Screen Share
+### Setup Verification (5 minutes)
+
+**Everyone check their environment:**
 
 ```bash
 cd agents2/oreilly-agent-mvp
+
+# Check Python
+python --version  # Should be 3.11+
+
+# Check virtual environment
+ls .venv  # Should exist
+
+# Activate venv
+source .venv/Scripts/activate  # Git Bash
+# OR
+.\.venv\Scripts\Activate.ps1   # PowerShell
+
+# Check dependencies
+pip list | grep langchain
+```
+
+**Verify API key:**
+
+```bash
+cat .env | grep -E "ANTHROPIC|OPENAI"
+# Should show your key (no spaces, no quotes)
+```
+
+### First Pipeline Run (10 minutes)
+
+**Launch the interactive menu:**
+
+```bash
 agent-menu
 ```
 
-### Demo Script
+**Walk through the menu options:**
 
-**Say:** "Let's watch this system process a real GitHub issue. I'm going to fetch issue #1 from our repo."
+```
+╔═══════════════════════════════════════╗
+║     O'Reilly Agent MVP                ║
+╠═══════════════════════════════════════╣
+║  1. Request an issue from GitHub      ║
+║  2. Load a mock issue                 ║
+║  3. Watch incoming/ folder            ║
+║  4. View recent results               ║
+║  5. Exit                              ║
+╚═══════════════════════════════════════╝
+```
 
-**Do:**
-1. Select option `1` (Request an issue from GitHub)
-2. Enter issue number: `1`
-3. Choose `y` to process now
-4. **PAUSE** while it runs—narrate what's happening:
-   - "PM Agent is analyzing the issue..."
-   - "Dev Agent is writing code..."
-   - "QA Agent is reviewing..."
+**Demo with mock issue:**
+
+1. Select option `2` (Load a mock issue)
+2. Choose `issue_001.json` (API Rate Limiting)
+3. Confirm `y` to process
+
+**While it runs, narrate:**
+
+- "PM Agent is analyzing the issue..."
+- "Dev Agent is writing code based on PM's plan..."
+- "QA Agent is reviewing the implementation..."
+- "Each agent adds to the pipeline state"
 
 **Show the output:**
+
 ```bash
+# List results
 ls outgoing/
-cat outgoing/result_YYYY-MM-DD_*.json | jq .
+
+# View the latest result
+cat outgoing/result_*.json | jq .
+
+# Key sections to point out:
+cat outgoing/result_*.json | jq .pm.summary
+cat outgoing/result_*.json | jq .dev.files
+cat outgoing/result_*.json | jq .qa.verdict
 ```
 
-**Say:** "Three agents just collaborated to create this. Let's understand how."
+### Understanding the Mock Issues
+
+**Available mock issues (use for testing):**
+
+| Issue | Description | Complexity |
+| --- | --- | --- |
+| 001 | API Rate Limiting | Medium |
+| 002 | User Authentication | High |
+| 003 | Data Export | Low |
+| 004 | Dashboard Performance | High |
+| 005 | Email Notifications | Medium |
+| 006 | Search Functionality | Medium |
+
+**Say:** "Each mock issue tests different agent behaviors. Use them to verify changes."
 
 ---
 
-## 🏗️ Architecture Walkthrough (15 minutes)
+## Understanding the Architecture (10 minutes)
 
-### The Big Picture Diagram
+### Pipeline State Flow
 
-```mermaid
-graph TB
-    subgraph "Input Sources"
-        A[GitHub API]
-        B[Mock Files]
-        C[File Watcher]
-    end
+**Draw on whiteboard:**
 
-    subgraph "Interactive Menu"
-        D[agent-menu CLI]
-    end
-
-    subgraph "Pipeline Orchestration"
-        E[Load & Validate]
-        F[PM Agent<br/>Analyzes Requirements]
-        G[Dev Agent<br/>Writes Code]
-        H[QA Agent<br/>Reviews Work]
-    end
-
-    subgraph "LLM Providers"
-        I[Anthropic Claude]
-        J[OpenAI GPT]
-        K[Azure OpenAI]
-    end
-
-    subgraph "Output"
-        L[JSON Result]
-        M[outgoing/ folder]
-    end
-
-    A --> D
-    B --> D
-    C --> D
-    D --> E
-    E --> F
-    F --> G
-    G --> H
-
-    F -.->|LLM calls| I
-    F -.->|LLM calls| J
-    F -.->|LLM calls| K
-
-    G -.->|LLM calls| I
-    G -.->|LLM calls| J
-    G -.->|LLM calls| K
-
-    H -.->|LLM calls| I
-    H -.->|LLM calls| J
-    H -.->|LLM calls| K
-
-    H --> L
-    L --> M
-
-    style F fill:#ffd93d
-    style G fill:#6bcf7f
-    style H fill:#a29bfe
-    style L fill:#74b9ff
+```
+┌──────────────┐
+│ PipelineState│
+├──────────────┤
+│ run_id       │
+│ issue        │ ← load_issue fills this
+│ pm_output    │ ← pm_node fills this
+│ dev_output   │ ← dev_node fills this
+│ qa_output    │ ← qa_node fills this
+│ token_usages │ ← each node appends
+│ result       │ ← finalize_node fills this
+└──────────────┘
 ```
 
-### Discussion Questions
+**Key insight:** "State is a bucket that passes from node to node. Each agent reads what it needs and adds its output."
 
-**Ask:** "Why three agents? Why not just one big prompt?"
+### The Graph Definition
 
-**Key Points to Make:**
-- **Separation of concerns** (each agent has ONE job)
-- **Easier to debug** (if QA is too harsh, fix QA only)
-- **Cheaper** (run PM once, iterate on Dev/QA)
-- **More realistic** (mimics real teams)
+**Show the code:**
 
-**Ask:** "What could go wrong with this design?"
-
-**Key Points:**
-- Agents can disagree
-- Cost adds up (3 LLM calls per issue)
-- Not all issues need 3 agents
-- Linear flow can be slow
-
-**Say:** "There's no perfect design. This is about trade-offs."
-
----
-
-## 🛠️ Hands-On: Get It Running (30 minutes)
-
-### Step 1: Setup Check (5 min)
-
-**Have everyone run:**
-```bash
-cd agents2/oreilly-agent-mvp
-python --version  # Should be 3.11+
-ls .venv          # Should exist
-```
-
-**If anyone doesn't have `.venv`:**
-```bash
-./scripts/setup.sh      # Mac/Linux/Git Bash
-.\scripts\setup.ps1     # Windows PowerShell
-```
-
-### Step 2: API Key Verification (5 min)
-
-**Have everyone check their `.env`:**
-```bash
-cat .env | grep -E "ANTHROPIC|OPENAI"  # Should show their key
-```
-
-**Common issues:**
-- Key has spaces: `ANTHROPIC_API_KEY = sk-ant-...` ❌
-- Key is quoted: `ANTHROPIC_API_KEY="sk-ant-..."` ❌
-- Correct: `ANTHROPIC_API_KEY=sk-ant-...` ✅
-
-### Step 3: First Run (10 min)
-
-**Everyone runs:**
-```bash
-agent-menu
-# Select: 2 (Load a mock issue)
-# Choose: 1 (issue_001.json)
-# Process: y
-```
-
-**While it's running, explain:**
-- "This is hitting the Anthropic or OpenAI API"
-- "Each agent takes 10-30 seconds"
-- "Cost: About $0.05-0.10 per issue"
-
-**After it finishes:**
-```bash
-ls outgoing/
-# Everyone should have a new result_*.json file
-```
-
-### Step 4: Inspect the Output (10 min)
-
-**Have everyone open the newest file in `outgoing/`:**
-
-**Point out the structure:**
-```json
-{
-    "run_id": "...",          // Unique identifier for this run
-    "timestamp_utc": "...",   // When the run finished
-    "issue": { ... },           // What went IN
-    "pm": { ... },              // PM's analysis
-    "dev": { ... },             // Dev's code and tests
-    "qa": { ... },              // QA's verdict and findings
-    "next_steps": [ ... ],      // Suggested follow-up actions
-    "metadata": { ... }         // Timestamps, token usage, cost
-}
-```
-
-**Key observation:** "Notice how each agent builds on the previous one."
-
-**Challenge:** "Find the QA verdict. Did the code pass?"
-
----
-
-## 📁 Code Walkthrough: The Bones (15 minutes)
-
-**Say:** "We're not reading every line. Just building awareness of where things are."
-
-### File 1: `models.py` (Lines 1-100)
-
-**Show in VS Code:**
-```bash
-code src/agent_mvp/models.py
-```
-
-**Scroll to these sections:**
-
-**Lines 15-45:** Issue model
 ```python
-class Issue(BaseModel):
-    issue_id: str
-    repo: str
-    issue_number: int
-    title: str
-    body: str = ""
-    labels: list[str] = []
-    url: str
-    source: IssueSource = IssueSource.MANUAL
-```
-
-**Say:** "This is our contract. Every issue must have these fields."
-
-**Lines 40-60:** PMOutput model
-```python
-class PMOutput(BaseModel):
-    summary: str
-    acceptance_criteria: List[str]
-    plan: List[str]
-    assumptions: List[str]
-```
-
-**Say:** "This is what PM agent MUST return. It's not optional."
-
-**Key Point:** "These models are the GLUE. They make sure agents speak the same language."
-
----
-
-### File 2: `config.py` (Lines 1-80)
-
-**Show in VS Code:**
-```bash
-code src/agent_mvp/config.py
-```
-
-**Lines 15-30:** Environment variables
-```python
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "anthropic")
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-```
-
-**Say:** "This reads from your `.env` file. That's why we don't commit secrets."
-
-**Lines 50-70:** get_llm() function
-```python
-def get_llm():
-    if provider == "anthropic":
-        return ChatAnthropic(model=model, temperature=temp)
-    elif provider == "openai":
-        return ChatOpenAI(model=model, temperature=temp)
-```
-
-**Say:** "This is how we support multiple LLM providers. ONE function, any provider."
-
-**Key Point:** "Abstraction means we can swap Anthropic for OpenAI without touching agent code."
-
----
-
-### File 3: `pipeline/graph.py` (Lines 300-330)
-
-**Show in VS Code:**
-```bash
-code src/agent_mvp/pipeline/graph.py
-```
-
-**Lines 307-335:** Graph builder
-```python
+# src/agent_mvp/pipeline/graph.py (lines 312-330)
 def create_pipeline_graph() -> StateGraph:
     builder = StateGraph(PipelineState)
 
+    # Add nodes
     builder.add_node("load_issue", load_issue_node)
     builder.add_node("pm", pm_node)
     builder.add_node("dev", dev_node)
     builder.add_node("qa", qa_node)
     builder.add_node("finalize", finalize_node)
 
+    # Define edges (linear flow)
     builder.set_entry_point("load_issue")
     builder.add_edge("load_issue", "pm")
     builder.add_edge("pm", "dev")
@@ -311,119 +167,340 @@ def create_pipeline_graph() -> StateGraph:
     return builder.compile()
 ```
 
-**Say:** "This is LangGraph. It's just a flowchart in code."
+**Visual representation:**
 
-**Draw on whiteboard/screen:**
 ```
 load_issue → pm → dev → qa → finalize → END
 ```
 
-**Say:** "Each arrow is an `add_edge`. Each box is an `add_node`. That's it."
-
-**Key Point:** "We could change this to make dev and qa run in parallel. It's just changing edges."
+**Ask:** "What would you change to make PM and QA run in parallel?"
 
 ---
 
-## 🤔 Discussion: Design Decisions (5 minutes)
+## Running Tests (12 minutes)
 
-### Question 1: "Why PM → Dev → QA in that order?"
+### Test Suite Overview (3 minutes)
 
-**Good answers:**
-- Mimics real teams
-- PM gives Dev clear requirements
-- QA needs something to review
+**Show the test structure:**
 
-**Challenge them:** "Could QA come before Dev?"
-- Maybe! QA could review the PLAN before code is written
+```bash
+tree tests/
+# tests/
+# ├── test_schema.py        # Pydantic model validation
+# ├── test_fs_moves.py      # File system utilities
+# ├── test_mcp_server.py    # MCP server validation
+# └── conftest.py           # Shared fixtures
+```
 
-### Question 2: "Why JSON files for input/output?"
+**Say:** "Tests verify contracts. When you change code, tests catch regressions."
 
-**Good answers:**
-- Easy to inspect
-- Works without a database
-- Good for demos and testing
+### Run All Tests (4 minutes)
 
-**Challenge them:** "What would you use in production?"
-- API endpoints
-- Message queues (RabbitMQ, SQS)
-- Database records
+**Basic test run:**
 
-### Question 3: "Why support multiple LLM providers?"
+```bash
+pytest
+```
 
-**Good answers:**
-- Cost flexibility
-- Avoid vendor lock-in
-- Different models for different tasks
+**With coverage:**
 
-**Real talk:** "Anthropic is great for coding. OpenAI has better function calling. Azure gives enterprise compliance."
+```bash
+pytest --cov=agent_mvp
+```
+
+**Expected output:**
+
+```
+========================= test session starts =========================
+collected 12 items
+
+tests/test_schema.py ....                                        [ 33%]
+tests/test_fs_moves.py ....                                      [ 66%]
+tests/test_mcp_server.py ....                                    [100%]
+
+========================= 12 passed in 2.34s ==========================
+```
+
+**Verbose mode (see each test):**
+
+```bash
+pytest -v
+```
+
+### Run Specific Tests (5 minutes)
+
+**Single file:**
+
+```bash
+pytest tests/test_schema.py -v
+```
+
+**Single test function:**
+
+```bash
+pytest tests/test_schema.py::test_issue_validation -v
+```
+
+**Pattern matching:**
+
+```bash
+pytest -k "token" -v  # All tests with "token" in name
+```
+
+**Hands-on:** "Everyone run the schema tests and verify they pass."
 
 ---
 
-## 🎯 Wrap-Up (5 minutes)
+## VSCode Debugging (20 minutes)
 
-**What We Accomplished:**
-- ✅ Watched the full pipeline run
-- ✅ Understood why it's structured this way
-- ✅ Got it running on your machine
-- ✅ Saw the key files without drowning in code
+### Open VSCode Correctly (2 minutes)
 
-**What's Next (Hour 3):**
-- We'll open `prompts.py` and CHANGE things
-- You'll modify agent behavior
-- We'll fetch real GitHub issues
+**IMPORTANT:** Open the `agents2/` folder, NOT `oreilly-agent-mvp/`.
 
-**Homework (Optional):**
-- Run the pipeline on all 3 mock issues
-- Compare the outputs
-- Bonus: Try to break it (what happens if you give it garbage input?)
+```bash
+code c:/github/agents2
+```
+
+**Why?** The launch configurations set PYTHONPATH relative to this root.
+
+### Available Debug Configurations (3 minutes)
+
+**Press F5 and see the dropdown:**
+
+| Config | Purpose | Best For |
+| --- | --- | --- |
+| Interactive Menu | Full menu with all options | Testing user flows |
+| Run Once (001-006) | Pipeline with specific mock | Testing full flow |
+| Folder Watcher | Event-driven processing | Testing automation |
+| MCP Server | MCP tools/resources | Testing MCP |
+| Run Tests (All) | All pytest tests | TDD workflow |
+| Pipeline Graph (Step Through) | Pauses immediately | Learning execution flow |
+
+**Say:** "Start with 'Pipeline Graph (Step Through)' -- it pauses at the first line so you can step through everything."
+
+### Essential Keyboard Shortcuts (2 minutes)
+
+| Key | Action |
+| --- | --- |
+| **F5** | Start debugging / Continue |
+| **F9** | Toggle breakpoint |
+| **F10** | Step Over (next line) |
+| **F11** | Step Into (enter function) |
+| **Shift+F11** | Step Out (exit function) |
+| **Ctrl+Shift+Y** | Open Debug Console |
+
+### Demo: Step Through the Pipeline (8 minutes)
+
+**Setup:**
+
+1. Open VSCode in `agents2/`
+2. Open `oreilly-agent-mvp/src/agent_mvp/pipeline/graph.py`
+3. Set breakpoints at:
+   - Line ~100: Inside `pm_node()` after `response = llm.invoke()`
+   - Line ~170: Inside `dev_node()` after `response = llm.invoke()`
+   - Line ~240: Inside `qa_node()` after `response = llm.invoke()`
+
+**Run:**
+
+1. Press F5
+2. Select "Run Once (Mock Issue 001)"
+3. When it pauses at pm_node:
+   - **Variables pane:** Expand `state` to see `issue` data
+   - **Debug Console:** Type `state["issue"]["title"]`
+   - Press F5 to continue to next breakpoint
+
+4. When it pauses at dev_node:
+   - **Check:** `state["pm_output"]` now exists
+   - **Debug Console:** `state["pm_output"]["plan"]`
+   - Press F5
+
+5. When it pauses at qa_node:
+   - **Check:** Both `pm_output` and `dev_output` exist
+   - **Debug Console:** `len(state["dev_output"]["files"])`
+
+**Key insight:** "Watch state.keys() grow: issue → pm_output → dev_output → qa_output → result"
+
+### Hands-On: Debug Token Tracking (5 minutes)
+
+**Set breakpoint in token tracking:**
+
+Open `oreilly-agent-mvp/src/agent_mvp/util/token_tracking.py`
+
+Set breakpoint at line ~40 (inside `extract_token_usage`):
+
+```python
+def extract_token_usage(response, model_name: str) -> Optional[TokenUsage]:
+    # BREAKPOINT HERE
+    ...
+```
+
+**Run with Mock Issue 001:**
+
+When it stops:
+- Inspect `response` object
+- Check `response.usage_metadata`
+- See `input_tokens` and `output_tokens`
+
+**Debug Console commands:**
+
+```python
+response.usage_metadata
+response.content[:200]  # First 200 chars of response
+```
 
 ---
 
-## 📝 Teaching Tips
+## Common Debugging Scenarios (5 minutes)
 
-### If Students Are Stuck on Setup
+### Scenario 1: "Why is QA failing?"
 
-**Common Issue 1:** "pip install fails"
-- Check Python version: `python --version`
-- Try: `python -m pip install --upgrade pip`
-- Last resort: Use PowerShell as admin
+1. Run "Run Once (Mock Issue 001)"
+2. Set breakpoint in `qa_node` before return
+3. Inspect `qa_data["verdict"]` and `qa_data["findings"]`
+4. Check if findings are reasonable or hallucinated
 
-**Common Issue 2:** "agent-menu not found"
-- Did they activate venv? `source .venv/Scripts/activate`
-- Try direct: `python -m agent_mvp.cli.interactive_menu`
+### Scenario 2: "Token costs seem high"
 
-**Common Issue 3:** "API key invalid"
-- Check for typos in `.env`
-- No spaces, no quotes
-- Verify key works: Test on Claude.ai or OpenAI web UI first
+1. Add watch expression: `state.get("token_usages", [])`
+2. Step through each agent
+3. Compare input_tokens vs output_tokens
+4. Identify which agent is expensive
 
-### If Students Are Ahead
+### Scenario 3: "Pipeline hangs at dev_node"
 
-**Challenge Tasks:**
-1. "Read `pipeline/prompts.py` and predict what the PM will say"
-2. "Find where the cost calculation happens" (Hint: metadata in output)
-3. "Trace the code path: How does menu option 1 reach the PM agent?"
+1. Enable "Break on Exception" (Debug sidebar → Breakpoints)
+2. Run pipeline
+3. When it hangs, press pause button
+4. Check Call Stack to see where it's stuck
+5. Often: API timeout or rate limiting
+
+### Scenario 4: "JSON parsing error"
+
+1. Set breakpoint at `_extract_json()` function
+2. Step through regex matching
+3. Inspect `response.content` for malformed JSON
+4. Check if LLM returned natural language instead
+
+---
+
+## Wrap-Up (5 minutes)
+
+### What We Accomplished
+
+- Ran the full PM → Dev → QA pipeline
+- Understood state flow through the graph
+- Ran tests with pytest
+- Mastered VSCode debugging with breakpoints
+- Inspected variables and token usage in real-time
+
+### What's Next (Hour 3)
+
+- Configure MCP server for external integration
+- Add a new feature: RAG vector source
+- Vibe coding with Claude Code
+- Local, cheap vector database setup
+
+### Quick Reference Card
+
+**Run pipeline:**
+```bash
+agent-menu
+```
+
+**Run tests:**
+```bash
+pytest -v
+pytest --cov=agent_mvp
+```
+
+**Debug in VSCode:**
+1. F5 → Select config
+2. F9 → Toggle breakpoint
+3. F10 → Step over
+4. Ctrl+Shift+Y → Debug console
+
+**Inspect state:**
+```python
+state.keys()
+state["pm_output"]["plan"]
+state.get("token_usages", [])
+```
+
+---
+
+## Teaching Tips
+
+### If VSCode Debugging Doesn't Work
+
+**Check:**
+1. Opened `agents2/` not `oreilly-agent-mvp/`
+2. Python extension installed
+3. Correct Python interpreter selected (bottom status bar)
+4. `.venv` activated
+
+**Fix PYTHONPATH issues:**
+```bash
+# In terminal before launching VSCode
+export PYTHONPATH=$PWD/oreilly-agent-mvp/src
+code .
+```
+
+### If Tests Fail
+
+**Common issues:**
+
+1. Missing dependencies: `pip install -e .`
+2. Missing `.env` file: Copy from `.env.example`
+3. API key issues: Check for spaces/quotes
+
+### If Pipeline Hangs
+
+**Causes:**
+- API rate limiting (wait 60 seconds)
+- Network issues (check connectivity)
+- Model overload (try different provider)
+
+**Fix:** Add timeout to `llm.invoke()`:
+
+```python
+response = llm.invoke([...], timeout=60)
+```
 
 ### Time Management
 
-- If demo runs long: Skip mock issue walkthrough, just show the JSON
-- If setup takes forever: Move code walkthrough to Hour 3
-- If discussion is rich: Let it run, cut code walkthrough short
+- If setup takes too long: Demo on your screen
+- If students are ahead: Challenge them to add a 4th agent
+- If debugging is confusing: Focus on just F5/F10/F9
 
 ---
 
-## 📚 Quick Reference: Files to Show
+## Advanced: Conditional Breakpoints
 
-| File | Lines | What to Show |
-|------|-------|--------------|
-| `models.py` | 10-25 | Issue model structure |
-| `models.py` | 40-60 | PMOutput model |
-| `config.py` | 15-30 | Environment variables |
-| `config.py` | 50-70 | LLM provider factory |
-| `pipeline/graph.py` | 307-335 | Graph builder (the flow) |
+**Right-click breakpoint → Edit Breakpoint → Expression:**
 
-**Pro Tip:** Have these files open in tabs BEFORE class starts.
+```python
+# Only stop if tokens are high
+token_usage.total_tokens > 5000
+
+# Only stop on errors
+state.get("error") is not None
+
+# Only stop for specific agent
+agent_name == "QA"
+```
 
 ---
 
-**You got this! 🚀**
+## File Reference
+
+| File | Purpose | Key Lines |
+| --- | --- | --- |
+| `pipeline/graph.py` | Graph definition and nodes | 44-70 (state), 100-150 (pm_node), 312-330 (graph) |
+| `pipeline/prompts.py` | Agent prompts | 8-20 (PM), 78-90 (Dev), 138-150 (QA) |
+| `util/token_tracking.py` | Token extraction and cost | 40 (extract), 90 (cost) |
+| `models.py` | Pydantic data models | 15-45 (Issue), 40-60 (PMOutput) |
+| `config.py` | Environment and LLM config | 15-30 (env vars), 50-70 (get_llm) |
+
+---
+
+**You got this! Debug like you mean it.**

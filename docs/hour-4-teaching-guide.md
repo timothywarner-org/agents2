@@ -1,699 +1,701 @@
-# Hour 4 Teaching Guide: Orchestration & Taking It Home
+# Hour 4 Teaching Guide: Azure Deployment and Best Practices
 
-**Goal:** Students understand how agents are connected and extend the system themselves.
+**Goal:** Students deploy the agent pipeline to Azure and understand production best practices for enterprise AI agents.
 
 **Time:** 60 minutes
 
 ---
 
-## 🎬 Opening (3 minutes)
+## Opening (3 minutes)
 
 **What We're Doing This Hour:**
-1. Understand LangGraph orchestration (the glue)
-2. See the CrewAI alternative (different approach)
-3. YOU extend the system (add agent, change flow, or new feature)
-4. Production considerations (how to ship this)
 
-**Key Message:** "You now have a working agent system. Let's make it YOURS."
+1. Review Azure architecture for AI agents
+2. Deploy to Azure Container Apps
+3. Configure Azure API Management (APIM)
+4. Set up Azure Cosmos DB for state persistence
+5. Integrate Azure AI Search (production RAG)
+6. Review enterprise best practices from research
 
----
-
-## 🕸️ LangGraph Orchestration (15 minutes)
-
-### What is LangGraph?
-
-**Say:** "LangGraph is a library for building stateful, multi-step workflows with LLMs."
-
-**Key concepts:**
-- **State:** Data that flows through the pipeline
-- **Nodes:** Functions that transform state
-- **Edges:** Connections between nodes
-- **Graph:** The whole flow
-
-**Draw on whiteboard:**
-```
-State: { issue, pm_output, dev_output, qa_output }
-       ↓
-    [PM Node] → updates state.pm_output
-       ↓
-    [Dev Node] → updates state.dev_output
-       ↓
-    [QA Node] → updates state.qa_output
-       ↓
-     [END]
-```
+**Key Message:** "Local development is great for learning. Production requires Azure services that scale, secure, and observe."
 
 ---
 
-### Code Walkthrough: The State
+## Azure Architecture Overview (10 minutes)
 
-**Show:** `src/agent_mvp/pipeline/graph.py` (Lines 40-75)
+### The Production Architecture
 
-```bash
-code src/agent_mvp/pipeline/graph.py
-```
+**Show the Mermaid diagram:**
 
-**Read aloud (Lines 44-70):**
-```python
-class PipelineState(TypedDict, total=False):
-    """State passed through the LangGraph pipeline."""
-
-    # Run metadata
-    run_id: str
-    start_time: float
-    source_file: Optional[str]
-
-    # Pipeline data
-    issue: Optional[dict]
-    pm_output: Optional[dict]
-    dev_output: Optional[dict]
-    qa_output: Optional[dict]
-
-    # Token tracking
-    token_usages: list[dict]
-
-    # Error handling
-    error: Optional[str]
-
-    # Final result cache
-    result: Optional[dict]
-```
-
-**Say:** "This is the bucket that gets passed from agent to agent."
-
-**Ask:** "What happens when PM finishes?"
-- **Answer:** It adds `pm_output` to the state, then passes the whole state to Dev
-
-**Key Point:** "Each agent reads the whole state, writes to its slice, and appends token usage for later cost reporting."
-
----
-
-### Code Walkthrough: A Node Function
-
-**Show:** `src/agent_mvp/pipeline/graph.py` (Lines 95-145)
-
-**Read aloud (Lines 100-160):**
-```python
-def pm_node(state: PipelineState) -> PipelineState:
-    logger = get_pipeline_logger()
-    logger.node_enter("pm")
-
-    if state.get("error"):
-        return state
-
-    try:
-        config = get_config()
-        llm = config.get_llm()
-        issue = Issue(**state["issue"])
-        prompt = format_pm_prompt(issue)
-
-        logger.agent_message("pm", "Analyzing issue and creating plan...")
-        response = llm.invoke([
-            {"role": "system", "content": PM_SYSTEM_PROMPT},
-            {"role": "user", "content": prompt},
-        ])
-
-        token_usage = extract_token_usage(response, config.llm_model)
-        token_usages = state.get("token_usages", [])
-        if token_usage:
-            agent_tokens = AgentTokens(agent_name="PM", usage=token_usage)
-            token_usages.append(agent_tokens.model_dump())
-
-        pm_data = _extract_json(response.content)
-        if pm_data is None:
-            logger.warning("PM response was not valid JSON, using fallback")
-            pm_data = {
-                "summary": response.content[:500],
-                "acceptance_criteria": ["Review PM response manually"],
-                "plan": ["Parse PM output and refine"],
-                "assumptions": ["LLM response format issue"],
-            }
-
-        pm_output = PMOutput(**pm_data)
-        logger.agent_message("pm", f"Created {len(pm_output.plan)} plan steps")
-        return {
-            **state,
-            "pm_output": pm_output.model_dump(),
-            "token_usages": token_usages,
-        }
-
-    except Exception as e:
-        return {**state, "error": f"PM agent failed: {e}"}
-```
-
-**Say:** "Let's break this down:"
-
-**Lines 109-111:** Error checking
-- If a previous agent failed, skip this one
-
-**Lines 113-117:** Get the LLM
-- Uses config we set in Hour 2
-
-**Lines 118-120:** Parse and validate input
-- Issue(**state["issue"]) ensures data is correct
-
-**Lines 123-132:** Call the LLM
-- This is the $$ moment—API call to Anthropic/OpenAI
-
-**Lines 134-141:** Token tracking & fallback
-- `extract_token_usage` stores usage for later cost reporting
-- If the LLM forgets JSON, we fall back to a safe placeholder
-
-**Lines 143-149:** Update state
-- `{**state, "pm_output": ...}` adds PM's work to the bucket
-- Token usage list travels with the state to finalize
-
-**Key Point:** "Every node follows this pattern: Validate input → Call LLM → Validate output → Update state"
-
----
-
-### Code Walkthrough: The Graph
-
-**Show:** `src/agent_mvp/pipeline/graph.py` (Lines 307-335)
-
-**Read aloud (Lines 312-330):**
-```python
-def create_pipeline_graph() -> StateGraph:
-    """Create the LangGraph pipeline."""
-
-    # Create the graph
-    builder = StateGraph(PipelineState)
-
-    # Add nodes
-    builder.add_node("load_issue", load_issue_node)
-    builder.add_node("pm", pm_node)
-    builder.add_node("dev", dev_node)
-    builder.add_node("qa", qa_node)
-    builder.add_node("finalize", finalize_node)
-
-    # Define edges (linear flow)
-    builder.set_entry_point("load_issue")
-    builder.add_edge("load_issue", "pm")
-    builder.add_edge("pm", "dev")
-    builder.add_edge("dev", "qa")
-    builder.add_edge("qa", "finalize")
-    builder.add_edge("finalize", END)
-
-    # Compile
-    return builder.compile()
-```
-
-**Say:** "This is the blueprint. Let's trace the flow:"
-
-1. `set_entry_point("load_issue")` → Start here
-2. `add_edge("load_issue", "pm")` → Then go to PM
-3. `add_edge("pm", "dev")` → Then Dev
-4. `add_edge("dev", "qa")` → Then QA
-5. `add_edge("qa", "finalize")` → Then finalize
-6. `add_edge("finalize", END)` → Done
-
-**Draw as flowchart:**
 ```mermaid
-graph LR
-    A[load_issue] --> B[pm]
-    B --> C[dev]
-    C --> D[qa]
-    D --> E[finalize]
-    E --> F[END]
+flowchart LR
+    subgraph Edge["Edge Access"]
+        User[Developer Portal]
+        GitHub[GitHub Webhooks]
+    end
+
+    subgraph Azure["Azure Landing Zone"]
+        subgraph Entry["API Layer"]
+            APIM[Azure API Management]
+        end
+        subgraph Orchestration["Agent Orchestration"]
+            Container[Azure Container Apps<br/>LangGraph Orchestrator]
+            subgraph Agents["CrewAI Agent Pool"]
+                PM[PM Agent]
+                DEV[Dev Agent]
+                QA[QA Agent]
+            end
+        end
+        subgraph Data["Knowledge & State"]
+            Cosmos[(Cosmos DB<br/>Workflow State)]
+            AISearch[(AI Search<br/>Vector Store)]
+            Queue[(Storage Queue<br/>Issue Events)]
+        end
+        subgraph Security["Secrets & Compliance"]
+            KeyVault[[Key Vault]]
+            ManagedId[Managed Identity]
+        end
+    end
+
+    User --> APIM
+    GitHub --> Queue
+    APIM --> Container
+    Container --> PM --> DEV --> QA
+    Container --> Cosmos
+    Container --> AISearch
+    KeyVault --> Container
 ```
 
-**Ask:** "How would we make Dev and QA run in parallel?"
-- **Answer:** Both would branch from PM, then merge at finalize
+### Component Breakdown
 
-**Say:** "That's just changing edges. We'd keep the same nodes."
+| Component | Purpose | Why Azure? |
+| --- | --- | --- |
+| **Container Apps** | Runs the pipeline | Serverless containers, auto-scale |
+| **API Management** | Gateway, rate limiting | Enterprise security, analytics |
+| **Cosmos DB** | Workflow state, results | Global distribution, low latency |
+| **AI Search** | Vector store (RAG) | Enterprise search, hybrid queries |
+| **Key Vault** | API keys, secrets | Managed secrets, rotation |
+| **Storage Queue** | Async processing | Decouple webhook from pipeline |
+
+**Say:** "This is the same pipeline we built locally, but with Azure services handling scale, state, and security."
 
 ---
 
-## 🤝 CrewAI Alternative (10 minutes)
+## Deploy to Azure Container Apps (15 minutes)
 
-### When to Use CrewAI Instead?
+### Prerequisites
 
-**Show:** `src/agent_mvp/pipeline/crew.py` (Lines 1-100)
+**Verify Azure CLI:**
 
 ```bash
-code src/agent_mvp/pipeline/crew.py
+az --version
+az login
+az account show
 ```
 
-**Say:** "CrewAI is higher-level. Less control, faster to build."
-
-**Compare:**
-
-| Feature | LangGraph | CrewAI |
-|---------|-----------|--------|
-| State management | Manual (you define it) | Automatic |
-| Flow control | Explicit edges | Automatic delegation |
-| Debugging | Easy (trace state) | Harder (black box) |
-| Flexibility | Very high | Medium |
-| Speed to build | Slower | Faster |
-
-**Read aloud (Lines 48-64):**
-```python
-@classmethod
-def create(cls, llm: Optional[LLM] = None) -> Agent:
-    """Create the PM agent instance."""
-    return Agent(
-        role=cls.ROLE,
-        goal=cls.GOAL,
-        backstory=cls.BACKSTORY,
-        llm=llm or _get_crew_llm(),
-        verbose=True,
-        allow_delegation=False,
-    )
-```
-
-**Say:** "In CrewAI, agents are OBJECTS with roles, goals, backstories."
-
-**Key differences:**
-- LangGraph: "Run this function on this state"
-- CrewAI: "You're a PM, here's your goal, figure it out"
-
-**Ask:** "When would you choose CrewAI?"
-- **Good answers:** Prototyping, when flow is obvious, when you want agents to self-organize
-
-**Ask:** "When would you choose LangGraph?"
-- **Good answers:** Production, complex flows, when you need full control
-
-**Say:** "This project uses both to show you the trade-offs. In your work, pick ONE."
-
----
-
-## 🔨 Hands-On: Extension Time (25 minutes)
-
-### Setup (5 min)
-
-**Say:** "Pick ONE extension to try. We have 20 minutes. Don't overthink it—just try."
-
-**Option 1: Add a 4th Agent (Easy)**
-- Example: Documentation Writer, Security Auditor, Performance Optimizer
-
-**Option 2: Change the Flow (Medium)**
-- Make Dev and QA run in parallel
-- Add a "review loop" (QA can send back to Dev)
-- Add a human approval step
-
-**Option 3: New Input Source (Medium)**
-- Fetch from YOUR GitHub repo
-- Read from CSV file
-- Add a REST API endpoint
-
-**Option 4: Better Output (Easy)**
-- Generate a markdown report
-- Add cost tracking
-- Create a summary email
-
-**Have everyone commit to ONE choice and form pairs if needed.**
-
----
-
-### Extension 1: Add a Documentation Agent
-
-**Say:** "Let's add a 4th agent that writes documentation."
-
-**Step 1: Create the agent class (Lines 250-280 in `crew.py`)**
-
-```python
-class DocAgent:
-    """Documentation agent that writes user guides."""
-
-    ROLE = "Technical Writer"
-    GOAL = "Create clear, user-friendly documentation"
-    BACKSTORY = """You are a Technical Writer who excels at making
-    complex features easy to understand for end users."""
-
-    @classmethod
-    def create(cls, llm: Optional[LLM] = None) -> Agent:
-        return Agent(
-            role=cls.ROLE,
-            goal=cls.GOAL,
-            backstory=cls.BACKSTORY,
-            llm=llm or _get_crew_llm(),
-            verbose=True,
-            allow_delegation=False,
-        )
-```
-
-**Step 2: Add to graph (in `graph.py`)**
-
-```python
-# In create_pipeline_graph()
-builder.add_node("doc", doc_node)
-builder.add_edge("qa", "doc")  # After QA, before finalize
-builder.add_edge("doc", "finalize")
-```
-
-**Step 3: Create the node function**
-
-```python
-def doc_node(state: PipelineState) -> PipelineState:
-    """Doc agent writes user documentation."""
-    # Similar structure to pm_node, dev_node, qa_node
-    # Takes dev_output, generates docs
-    # Returns {**state, "doc_output": doc_data}
-```
-
-**Step 4: Test it**
+**Set variables:**
 
 ```bash
-agent-menu
-# Run a mock issue
-# Check outgoing/ for doc_output field
+RESOURCE_GROUP="rg-agent-mvp"
+LOCATION="eastus"
+CONTAINER_APP_ENV="cae-agent-mvp"
+CONTAINER_APP="ca-agent-pipeline"
+ACR_NAME="acragentmvp"
 ```
 
----
-
-### Extension 2: Parallel Dev and QA
-
-**Say:** "Let's make Dev and QA run at the same time."
-
-**Change the graph:**
-
-**Before:**
-```python
-builder.add_edge("pm", "dev")
-builder.add_edge("dev", "qa")
-builder.add_edge("qa", "finalize")
-```
-
-**After:**
-```python
-# Both branch from PM
-builder.add_edge("pm", "dev")
-builder.add_edge("pm", "qa")
-
-# Both lead to finalize
-builder.add_edge("dev", "finalize")
-builder.add_edge("qa", "finalize")
-```
-
-**Ask:** "What's the problem with this?"
-- QA needs Dev's code to review!
-
-**Solution:** Add a conditional edge
-```python
-def should_run_qa(state):
-    # Only run QA if Dev is done
-    return "qa" if "dev_output" in state else "finalize"
-
-builder.add_conditional_edges("pm", should_run_qa)
-```
-
-**Say:** "This is why orchestration is hard. Dependencies matter."
-
----
-
-### Extension 3: Surface Token Costs
-
-**Say:** "Token tracking already runs automatically—let's surface it in a new way."
-
-**Step 1: Inspect the utilities**
+### Step 1: Create Resource Group (2 minutes)
 
 ```bash
-code src/agent_mvp/util/token_tracking.py
+az group create \
+  --name $RESOURCE_GROUP \
+  --location $LOCATION
 ```
 
-**Point out:** `aggregate_pipeline_tokens` combines per-agent usage, and `format_token_summary` prints a nice table (called from `finalize_node`).
+### Step 2: Create Container Registry (3 minutes)
 
-**Step 2: Customize the summary**
+```bash
+# Create registry
+az acr create \
+  --resource-group $RESOURCE_GROUP \
+  --name $ACR_NAME \
+  --sku Basic \
+  --admin-enabled true
+
+# Get credentials
+ACR_PASSWORD=$(az acr credential show \
+  --name $ACR_NAME \
+  --query "passwords[0].value" -o tsv)
+```
+
+### Step 3: Build and Push Container (5 minutes)
+
+**Create Dockerfile (if not exists):**
+
+```dockerfile
+# Dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy source
+COPY src/ ./src/
+COPY pyproject.toml .
+
+# Install package
+RUN pip install -e .
+
+# Expose port for health checks
+EXPOSE 8080
+
+# Run the MCP server (or pipeline as HTTP endpoint)
+CMD ["python", "-m", "agent_mvp.mcp_server", "--port", "8080"]
+```
+
+**Build and push:**
+
+```bash
+# Login to ACR
+az acr login --name $ACR_NAME
+
+# Build and push
+az acr build \
+  --registry $ACR_NAME \
+  --image agent-pipeline:v1 \
+  --file Dockerfile \
+  .
+```
+
+### Step 4: Deploy Container App (5 minutes)
+
+**Create environment:**
+
+```bash
+az containerapp env create \
+  --name $CONTAINER_APP_ENV \
+  --resource-group $RESOURCE_GROUP \
+  --location $LOCATION
+```
+
+**Deploy app:**
+
+```bash
+az containerapp create \
+  --name $CONTAINER_APP \
+  --resource-group $RESOURCE_GROUP \
+  --environment $CONTAINER_APP_ENV \
+  --image $ACR_NAME.azurecr.io/agent-pipeline:v1 \
+  --registry-server $ACR_NAME.azurecr.io \
+  --registry-username $ACR_NAME \
+  --registry-password $ACR_PASSWORD \
+  --target-port 8080 \
+  --ingress external \
+  --cpu 1 \
+  --memory 2Gi \
+  --min-replicas 0 \
+  --max-replicas 5 \
+  --secrets "anthropic-key=<YOUR_KEY>" \
+  --env-vars "ANTHROPIC_API_KEY=secretref:anthropic-key"
+```
+
+**Get the URL:**
+
+```bash
+az containerapp show \
+  --name $CONTAINER_APP \
+  --resource-group $RESOURCE_GROUP \
+  --query properties.configuration.ingress.fqdn -o tsv
+```
+
+---
+
+## Configure API Management (10 minutes)
+
+### Why APIM?
+
+- **Rate limiting:** Prevent abuse
+- **Authentication:** API keys, OAuth
+- **Caching:** Reduce LLM calls
+- **Analytics:** Track usage, costs
+- **Transformation:** Request/response manipulation
+
+### Create APIM Instance (3 minutes)
+
+```bash
+APIM_NAME="apim-agent-mvp"
+
+az apim create \
+  --name $APIM_NAME \
+  --resource-group $RESOURCE_GROUP \
+  --publisher-name "O'Reilly" \
+  --publisher-email "admin@example.com" \
+  --sku-name Consumption
+```
+
+**Note:** Consumption tier takes ~5 minutes to deploy.
+
+### Import API from Container App (3 minutes)
+
+**In Azure Portal:**
+
+1. Open API Management → APIs
+2. Add API → Container App
+3. Select your Container App
+4. Configure base URL and operations
+
+**Or via CLI:**
+
+```bash
+CONTAINER_URL=$(az containerapp show \
+  --name $CONTAINER_APP \
+  --resource-group $RESOURCE_GROUP \
+  --query properties.configuration.ingress.fqdn -o tsv)
+
+az apim api create \
+  --resource-group $RESOURCE_GROUP \
+  --service-name $APIM_NAME \
+  --api-id agent-pipeline \
+  --path /pipeline \
+  --display-name "Agent Pipeline API" \
+  --service-url "https://$CONTAINER_URL"
+```
+
+### Add Rate Limiting Policy (4 minutes)
+
+**In Portal → API → Inbound policies:**
+
+```xml
+<policies>
+    <inbound>
+        <base />
+        <rate-limit calls="10" renewal-period="60" />
+        <quota calls="100" renewal-period="86400" />
+        <set-header name="X-Request-ID" exists-action="skip">
+            <value>@(context.RequestId.ToString())</value>
+        </set-header>
+    </inbound>
+    <backend>
+        <base />
+    </backend>
+    <outbound>
+        <base />
+    </outbound>
+</policies>
+```
+
+**Explain:**
+
+- `rate-limit`: 10 calls per minute per subscription
+- `quota`: 100 calls per day
+- `X-Request-ID`: Track requests for debugging
+
+---
+
+## Set Up Cosmos DB for State (8 minutes)
+
+### Why Cosmos DB?
+
+- **Workflow state:** Track pipeline runs
+- **Results storage:** Query past outputs
+- **Multi-region:** Global distribution for low latency
+- **Partitioning:** Scale to millions of documents
+
+### Create Cosmos Account (3 minutes)
+
+```bash
+COSMOS_ACCOUNT="cosmos-agent-mvp"
+
+az cosmosdb create \
+  --name $COSMOS_ACCOUNT \
+  --resource-group $RESOURCE_GROUP \
+  --kind GlobalDocumentDB \
+  --default-consistency-level Session \
+  --locations regionName=$LOCATION failoverPriority=0
+```
+
+### Create Database and Container (3 minutes)
+
+```bash
+# Create database
+az cosmosdb sql database create \
+  --account-name $COSMOS_ACCOUNT \
+  --resource-group $RESOURCE_GROUP \
+  --name AgentMVP
+
+# Create container for pipeline runs
+az cosmosdb sql container create \
+  --account-name $COSMOS_ACCOUNT \
+  --resource-group $RESOURCE_GROUP \
+  --database-name AgentMVP \
+  --name PipelineRuns \
+  --partition-key-path /issue_id \
+  --throughput 400
+```
+
+### Update Pipeline to Use Cosmos (2 minutes)
+
+**Add to environment variables:**
+
+```bash
+COSMOS_ENDPOINT=$(az cosmosdb show \
+  --name $COSMOS_ACCOUNT \
+  --resource-group $RESOURCE_GROUP \
+  --query documentEndpoint -o tsv)
+
+COSMOS_KEY=$(az cosmosdb keys list \
+  --name $COSMOS_ACCOUNT \
+  --resource-group $RESOURCE_GROUP \
+  --query primaryMasterKey -o tsv)
+
+# Update Container App
+az containerapp update \
+  --name $CONTAINER_APP \
+  --resource-group $RESOURCE_GROUP \
+  --set-env-vars \
+    "COSMOS_ENDPOINT=$COSMOS_ENDPOINT" \
+    "COSMOS_KEY=secretref:cosmos-key" \
+  --secrets "cosmos-key=$COSMOS_KEY"
+```
+
+---
+
+## Azure AI Search for Production RAG (7 minutes)
+
+### Why AI Search Instead of ChromaDB?
+
+| Feature | ChromaDB | Azure AI Search |
+| --- | --- | --- |
+| Deployment | Local/container | Managed service |
+| Scale | Single instance | Auto-scale |
+| Hybrid search | Vector only | Vector + keyword |
+| Filters | Basic | Rich faceting |
+| Security | None | RBAC, managed identity |
+| Cost | Free | $$$  (but managed) |
+
+**Say:** "ChromaDB is great for dev. AI Search is for production."
+
+### Create AI Search Service (3 minutes)
+
+```bash
+SEARCH_NAME="search-agent-mvp"
+
+az search service create \
+  --name $SEARCH_NAME \
+  --resource-group $RESOURCE_GROUP \
+  --sku Basic \
+  --partition-count 1 \
+  --replica-count 1
+```
+
+### Create Issues Index (4 minutes)
+
+**Index schema for issues:**
+
+```json
+{
+  "name": "issues-index",
+  "fields": [
+    {"name": "id", "type": "Edm.String", "key": true},
+    {"name": "title", "type": "Edm.String", "searchable": true},
+    {"name": "body", "type": "Edm.String", "searchable": true},
+    {"name": "embedding", "type": "Collection(Edm.Single)", "dimensions": 1536, "vectorSearchProfile": "default"},
+    {"name": "pm_summary", "type": "Edm.String", "searchable": true},
+    {"name": "qa_verdict", "type": "Edm.String", "filterable": true},
+    {"name": "created_at", "type": "Edm.DateTimeOffset", "sortable": true}
+  ],
+  "vectorSearch": {
+    "algorithms": [{"name": "hnsw", "kind": "hnsw"}],
+    "profiles": [{"name": "default", "algorithm": "hnsw"}]
+  }
+}
+```
+
+**Create via Portal or REST API:**
+
+```bash
+SEARCH_KEY=$(az search admin-key show \
+  --service-name $SEARCH_NAME \
+  --resource-group $RESOURCE_GROUP \
+  --query primaryKey -o tsv)
+
+curl -X POST \
+  "https://$SEARCH_NAME.search.windows.net/indexes?api-version=2023-11-01" \
+  -H "Content-Type: application/json" \
+  -H "api-key: $SEARCH_KEY" \
+  -d @index-schema.json
+```
+
+---
+
+## Best Practices Review (7 minutes)
+
+### From Enterprise AI Agents Research
+
+**Pull key insights from the research documents:**
+
+### 1. Security First
+
+| Practice | Implementation |
+| --- | --- |
+| **Secrets in Key Vault** | Never in code or env vars |
+| **Managed Identity** | No credentials in container |
+| **Network isolation** | VNet for internal services |
+| **Prompt injection defense** | Input validation, output filtering |
+
+**Example: Key Vault integration:**
+
+```bash
+# Enable managed identity
+az containerapp identity assign \
+  --name $CONTAINER_APP \
+  --resource-group $RESOURCE_GROUP \
+  --system-assigned
+
+# Grant Key Vault access
+IDENTITY_ID=$(az containerapp identity show \
+  --name $CONTAINER_APP \
+  --resource-group $RESOURCE_GROUP \
+  --query principalId -o tsv)
+
+az keyvault set-policy \
+  --name kv-agent-mvp \
+  --object-id $IDENTITY_ID \
+  --secret-permissions get list
+```
+
+### 2. Observability
+
+**Three pillars:**
+
+1. **Logs:** Structured logging to Application Insights
+2. **Metrics:** Token usage, latency, error rates
+3. **Traces:** Distributed tracing across agents
+
+**Enable Application Insights:**
+
+```bash
+az containerapp update \
+  --name $CONTAINER_APP \
+  --resource-group $RESOURCE_GROUP \
+  --dapr-enabled true \
+  --dapr-app-id agent-pipeline \
+  --dapr-app-port 8080
+```
+
+### 3. Cost Management
+
+**Cost levers:**
+
+| Lever | Strategy |
+| --- | --- |
+| **Model selection** | Haiku for simple, Sonnet for complex |
+| **Caching** | Cache prompts and responses |
+| **Batching** | Process multiple issues together |
+| **Circuit breakers** | Stop runaway costs |
+
+**Example: Model routing:**
 
 ```python
-def format_token_summary(pipeline_tokens: PipelineTokens) -> str:
-    lines = ["Token Usage Summary"]
-    for agent in pipeline_tokens.agents:
-        cost = agent.usage.estimated_cost_usd or 0.0
-        lines.append(f"- {agent.agent_name}: {agent.usage.total_tokens} tokens (${cost:.4f})")
-    lines.append(f"Total: {pipeline_tokens.total_tokens} tokens (${pipeline_tokens.estimated_total_cost_usd:.4f})")
-    return "\n".join(lines)
+def get_model_for_task(task_complexity: str) -> str:
+    if task_complexity == "low":
+        return "claude-3-haiku-20240307"  # $0.25/1M tokens
+    elif task_complexity == "medium":
+        return "claude-3-5-sonnet-20241022"  # $3/1M tokens
+    else:
+        return "claude-3-opus-20240229"  # $15/1M tokens
 ```
 
-**Step 3: Persist it somewhere**
+### 4. Testing AI Systems
 
-```python
-# In finalize_node, after PipelineResult.create(...)
-result = PipelineResult.create(...)
-result.next_steps.insert(0, format_token_summary(pipeline_tokens))
+**Testing pyramid for agents:**
+
+```
+           /\
+          /  \
+         / E2E \      ← Full pipeline tests (few)
+        /--------\
+       /Integration\   ← Agent interaction tests (some)
+      /--------------\
+     /  Unit Tests    \ ← Prompt validation, schemas (many)
+    /------------------\
 ```
 
-**Show the output:**
-```bash
-cat outgoing/result_*.json | jq .metadata.token_usage
-# Includes per-agent tokens, totals, and estimated cost
-```
+**Key test types:**
+
+- **Golden dataset:** Known inputs with expected outputs
+- **Property tests:** "QA always returns a verdict"
+- **Regression tests:** Previous issues still work
+- **Human eval:** Sample and review manually
+
+### 5. Guardrails and Safety
+
+**Implement defense in depth:**
+
+1. **Input validation:** Schema validation, content filtering
+2. **Output validation:** JSON schema, harmful content detection
+3. **Tool restrictions:** Limit what agents can access
+4. **Human-in-the-loop:** Escalation for uncertain decisions
 
 ---
 
-### Show and Tell (5 min)
-
-**Say:** "Who wants to demo what they built?"
-
-**Pick 2-3 volunteers to share:**
-- What extension did you try?
-- What worked?
-- What broke?
-- What would you do differently?
-
-**Key Point:** "Breaking stuff is learning. That's why we have mock issues."
-
----
-
-## 🏭 Production Considerations (10 minutes)
-
-### Cost Management
-
-**Say:** "At scale, costs add up FAST."
-
-**Calculations:**
-- 1 issue = 3 agents × $0.015 = ~$0.05
-- 100 issues/day = $5/day = $150/month
-- 1000 issues/day = $1500/month
-
-**Optimization strategies:**
-1. **Use cheaper models for simple tasks** (Haiku for PM, Sonnet for Dev)
-2. **Cache prompts** (if processing similar issues)
-3. **Batch processing** (run 10 issues at once)
-4. **Skip agents** (not every issue needs QA)
-
----
-
-### Observability
-
-**Say:** "In production, you need to SEE what's happening."
-
-**What to log:**
-- Timestamps for each agent
-- Token counts
-- Error rates
-- LLM response times
-- Agent agreement rates (how often does QA approve?)
-
-**Tools:**
-- **OpenTelemetry** for traces
-- **Prometheus** for metrics
-- **Datadog/New Relic** for monitoring
-
-**Show:** `src/agent_mvp/logging_setup.py`
-```bash
-code src/agent_mvp/logging_setup.py
-```
-
-**Say:** "We're using rich logs. In prod, you'd send these to a log aggregator."
-
----
-
-### Security & Compliance
-
-**Key concerns:**
-1. **API keys:** Never in code, always in env vars
-2. **PII handling:** What if issues contain user data?
-3. **Audit trails:** Who ran what when?
-4. **Rate limiting:** Don't get blocked by OpenAI/Anthropic
-
-**Best practices:**
-- Use secret managers (AWS Secrets Manager, Azure Key Vault)
-- Redact PII before sending to LLMs
-- Log every run with timestamps
-- Implement exponential backoff for API calls
-
----
-
-### Testing Agent Systems
-
-**Say:** "This is HARD. LLMs are non-deterministic."
-
-**Testing strategies:**
-1. **Golden datasets:** Known inputs with expected outputs
-2. **Property testing:** "QA should always return a verdict"
-3. **Regression testing:** "Issue #5 should still work"
-4. **Human eval:** Sample 10% of outputs, review manually
-
-**Show:** `tests/test_schema.py`
-```bash
-code tests/test_schema.py
-```
-
-**Say:** "We test schemas and utilities. Testing agent BEHAVIOR is research-level hard."
-
----
-
-## 🎯 Wrap-Up & What's Next (7 minutes)
+## Wrap-Up and Q&A (5 minutes)
 
 ### What We Accomplished in 4 Hours
 
-**Hour 1:** Understood agents, used Copilot Studio & Claude
-**Hour 2:** Got the system running, saw the architecture
-**Hour 3:** Modified prompts, fetched real issues
-**Hour 4:** Extended the system, learned production tips
+| Hour | Topic | Key Skills |
+| --- | --- | --- |
+| 1 | What is an Agent? | Claude Code, Copilot Studio |
+| 2 | Run, Test, Debug | Pipeline execution, VSCode debugging |
+| 3 | MCP and RAG | Server configuration, vibe coding |
+| 4 | Azure Deployment | Container Apps, APIM, Cosmos, AI Search |
 
-**Key Takeaway:** "You now have a working multi-agent system you can customize."
+### Architecture Comparison
 
----
+**Local (Hours 1-3):**
 
-### Resources for Going Deeper
+```
+File System → Pipeline → JSON Files
+```
 
-**Documentation:**
-- [LangGraph Docs](https://langchain-ai.github.io/langgraph/)
-- [CrewAI Docs](https://docs.crewai.com/)
-- [LangChain Agents Guide](https://python.langchain.com/docs/modules/agents/)
+**Production (Hour 4):**
 
-**Communities:**
-- LangChain Discord
-- Reddit r/LangChain
-- Twitter #LangGraph
+```
+APIM → Container Apps → Cosmos DB
+        ↓
+    AI Search (RAG)
+        ↓
+    Key Vault (Secrets)
+```
 
-**Next Steps:**
-1. **Deploy this:** Add to your CI/CD, process real issues
-2. **Extend it:** Add agents for your use case
-3. **Share it:** Blog about what you built
-4. **Teach it:** Show your team
-
----
-
-### Your Homework (Optional)
+### Next Steps for Students
 
 **Beginner:**
-- Add a 4th agent (any role you want)
-- Change the flow to handle errors better
-- Add email notifications for results
+
+- Deploy the basic Container App
+- Add one APIM policy (rate limiting)
+- View logs in Application Insights
 
 **Intermediate:**
-- Deploy to AWS Lambda or Azure Functions
-- Add a database to store results
-- Create a web UI with Streamlit
+
+- Add Cosmos DB persistence
+- Implement model routing by complexity
+- Set up GitHub webhook integration
 
 **Advanced:**
-- Implement agent memory (remember past issues)
-- Add tool calling (agents can use APIs)
-- Build a feedback loop (humans rate agent quality)
+
+- Full AI Search integration
+- Custom evaluations pipeline
+- Multi-region deployment
+
+### Resources
+
+**Azure Documentation:**
+
+- [Container Apps](https://learn.microsoft.com/azure/container-apps/)
+- [API Management](https://learn.microsoft.com/azure/api-management/)
+- [Cosmos DB](https://learn.microsoft.com/azure/cosmos-db/)
+- [AI Search](https://learn.microsoft.com/azure/search/)
+
+**Enterprise AI Agents:**
+
+- ChatGPT Research: Enterprise AI Agents 2026
+- Gemini Research: Architecture of Autonomy
+- Claude Research: Production Patterns
 
 ---
 
-### Q&A (5 minutes)
+## Teaching Tips
 
-**Common questions:**
+### If Azure Deployment Is Slow
 
-**"Should I use this in production?"**
-- For prototyping: YES
-- For production: Add testing, monitoring, error handling first
+**Prep ahead:**
 
-**"LangGraph or CrewAI?"**
-- LangGraph for control, CrewAI for speed
-- Start with CrewAI, migrate to LangGraph when you need more
+- Pre-create APIM (takes 20+ minutes on Developer tier)
+- Use Consumption tier for faster deployment
+- Have screenshots ready for each step
 
-**"How do I handle agent disagreements?"**
-- Add a "manager" agent that decides
-- Use voting (if you have multiple reviewers)
-- Human-in-the-loop for critical decisions
+### If Students Don't Have Azure Access
 
-**"What about hallucinations?"**
-- Use structured outputs (JSON schemas)
-- Add validation layers
-- Have agents cross-check each other
+**Options:**
 
----
+1. Demo on your screen while they follow along
+2. Use Azure free tier ($200 credit)
+3. Show architecture diagrams, skip deployment
+4. Focus on best practices discussion
 
-## 📝 Teaching Tips
+### If Running Behind
 
-### If Extensions Don't Work
+**Prioritize:**
 
-**Say:** "Breaking things is part of learning. Let's debug together."
+1. Container Apps deployment (core)
+2. Best practices review (critical concepts)
+3. Skip APIM and Cosmos (can do later)
 
-**Common issues:**
-1. Forgot to add node to graph
-2. Forgot to update state schema
-3. Prompt doesn't return valid JSON
+### If Students Are Advanced
 
-**Debugging strategy:**
-1. Check logs: `cat outgoing/result_*.json | jq .error`
-2. Print state at each step
-3. Run one agent at a time
+**Challenges:**
+
+1. "Add a custom domain and TLS to your Container App"
+2. "Implement blue-green deployment with traffic splitting"
+3. "Create a Bicep template for the entire architecture"
 
 ---
 
-### If Running Short on Time
+## Quick Reference: Azure CLI Commands
 
-**Skip:**
-- CrewAI walkthrough (they can read the docs)
-- Extension show-and-tell (do it async)
-
-**Keep:**
-- LangGraph orchestration (core concept)
-- Production considerations (valuable)
-
----
-
-### If Students Are Confused
-
-**Signs:**
-- Lots of "wait, what?" questions
-- Nobody attempting extensions
-- Blank stares during code walkthrough
-
-**Fix:**
-- Go back to the mermaid diagram
-- Draw the flow on whiteboard
-- Pair programming for extensions
-
----
-
-## 📚 Quick Reference: Key Concepts
-
-| Concept | Explanation | File/Line |
-|---------|-------------|-----------|
-| State | Data flowing through pipeline | `graph.py:44-55` |
-| Node | Function that transforms state | `graph.py:100-130` |
-| Edge | Connection between nodes | `graph.py:320-325` |
-| Graph | Complete orchestration | `graph.py:312-330` |
-| Agent (CrewAI) | Object with role/goal | `crew.py:48-64` |
-
----
-
-## 🎨 Visual Aid: Production Architecture
-
-Draw this for the "what's next" section:
-
-```
-┌─────────────┐
-│   GitHub    │────┐
-│  Webhooks   │    │
-└─────────────┘    │
-                   ↓
-┌─────────────────────────────────┐
-│     API Gateway / Queue         │
-│  (Rate limiting, retry logic)   │
-└─────────────────────────────────┘
-                   ↓
-┌─────────────────────────────────┐
-│      Agent Pipeline             │
-│  (What we built today)          │
-└─────────────────────────────────┘
-                   ↓
-┌──────────────┬──────────────────┐
-│   Database   │   Notification   │
-│  (Results)   │   (Slack/Email)  │
-└──────────────┴──────────────────┘
+**Deploy Container App:**
+```bash
+az containerapp create \
+  --name $CONTAINER_APP \
+  --resource-group $RESOURCE_GROUP \
+  --environment $CONTAINER_APP_ENV \
+  --image $ACR_NAME.azurecr.io/agent-pipeline:v1 \
+  --target-port 8080 \
+  --ingress external
 ```
 
-**Say:** "This is the full production system. You have the middle piece. The rest is plumbing."
+**Get Container App URL:**
+```bash
+az containerapp show \
+  --name $CONTAINER_APP \
+  --resource-group $RESOURCE_GROUP \
+  --query properties.configuration.ingress.fqdn -o tsv
+```
+
+**View logs:**
+```bash
+az containerapp logs show \
+  --name $CONTAINER_APP \
+  --resource-group $RESOURCE_GROUP \
+  --follow
+```
+
+**Scale Container App:**
+```bash
+az containerapp update \
+  --name $CONTAINER_APP \
+  --resource-group $RESOURCE_GROUP \
+  --min-replicas 1 \
+  --max-replicas 10
+```
 
 ---
 
-**Congrats! You taught a 4-hour class on AI agents! 🎉**
+## Final Checklist
+
+Before ending the session, verify students can:
+
+- [ ] Explain the Azure architecture for AI agents
+- [ ] Deploy a container to Azure Container Apps
+- [ ] Understand APIM's role in production
+- [ ] Describe when to use Cosmos vs AI Search
+- [ ] List 3 security best practices
+- [ ] Identify cost optimization strategies
+- [ ] Access resources for continued learning
+
+---
+
+**Congratulations! You've taught production AI agents in 4 hours.**

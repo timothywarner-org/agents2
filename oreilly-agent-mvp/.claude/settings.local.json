@@ -4,7 +4,9 @@
       "Bash(python -m py_compile:*)",
       "Bash(.venv/Scripts/python:*)",
       "Bash(PYTHONIOENCODING=utf-8 PYTHONPATH=src .venv/Scripts/python:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "mcp__context7__resolve-library-id",
+      "mcp__context7__query-docs"
     ]
   }
 }
