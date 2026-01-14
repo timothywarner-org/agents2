@@ -6,7 +6,12 @@
       "Bash(PYTHONIOENCODING=utf-8 PYTHONPATH=src .venv/Scripts/python:*)",
       "Bash(python:*)",
       "mcp__context7__resolve-library-id",
-      "mcp__context7__query-docs"
+      "mcp__context7__query-docs",
+      "Bash(source .env)",
+      "Skill(pptx)",
+      "Bash(where npx:*)",
+      "Bash(node --version:*)",
+      "Bash(echo:*)"
     ]
   }
 }
