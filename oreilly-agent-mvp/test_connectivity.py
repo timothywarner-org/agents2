@@ -6,32 +6,32 @@ from pathlib import Path
 
 def load_env_direct():
     """Load .env directly from file, bypassing any caching."""
-    env = {}
+    env_vars = {}
     env_path = Path(__file__).parent / ".env"
     if env_path.exists():
-        with open(env_path, 'r') as f:
+        with open(env_path, 'r', encoding='utf-8') as f:
             for line in f:
                 line = line.strip()
                 if line and not line.startswith('#') and '=' in line:
                     key, value = line.split('=', 1)
-                    env[key.strip()] = value.strip()
-    return env
+                    env_vars[key.strip()] = value.strip()
+    return env_vars
 
 
-def test_azure_openai(env):
+def test_azure_openai(env_vars):
     """Test Azure OpenAI connectivity."""
     print("\n[1/3] Testing Azure OpenAI...")
-    endpoint = env.get("AZURE_OPENAI_ENDPOINT", "").rstrip('/')
-    api_key = env.get("AZURE_OPENAI_API_KEY", "")
-    deployment = env.get("AZURE_OPENAI_DEPLOYMENT", "")
-    api_version = env.get("AZURE_OPENAI_API_VERSION", "2024-02-15-preview")
+    endpoint = env_vars.get("AZURE_OPENAI_ENDPOINT", "").rstrip('/')
+    api_key = env_vars.get("AZURE_OPENAI_API_KEY", "")
+    deployment = env_vars.get("AZURE_OPENAI_DEPLOYMENT", "")
+    api_version = env_vars.get("AZURE_OPENAI_API_VERSION", "2024-02-15-preview")
 
     if not all([endpoint, api_key, deployment]):
         print("  - Azure OpenAI not configured (missing env vars)")
         return False
 
     url = f'{endpoint}/openai/deployments/{deployment}/chat/completions?api-version={api_version}'
-    
+
     req = urllib.request.Request(
         url,
         data=json.dumps({
@@ -58,10 +58,10 @@ def test_azure_openai(env):
         return False
 
 
-def test_deepseek(env):
+def test_deepseek(env_vars):
     """Test DeepSeek connectivity."""
     print("\n[2/3] Testing DeepSeek...")
-    api_key = env.get("OPENAI_API_KEY", "")
+    api_key = env_vars.get("OPENAI_API_KEY", "")
 
     if not api_key:
         print("  - DeepSeek not configured (OPENAI_API_KEY not set)")
@@ -96,10 +96,10 @@ def test_deepseek(env):
         return False
 
 
-def test_github(env):
+def test_github(env_vars):
     """Test GitHub API connectivity."""
     print("\n[3/3] Testing GitHub...")
-    token = env.get("GITHUB_TOKEN", "")
+    token = env_vars.get("GITHUB_TOKEN", "")
 
     if not token:
         print("  - GitHub not configured (GITHUB_TOKEN not set)")
