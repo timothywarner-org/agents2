@@ -55,6 +55,109 @@
     }
     .msg-time { font-size: 11px; color: var(--contoso-gray-dark); margin-top: 4px; }
 
+    /* Provenance block — appended under bot replies. Deliberately understated
+       so the chat stays readable; user expands sources when they want detail. */
+    .provenance {
+      margin-top: 8px;
+      max-width: 680px;
+      font-size: 12px;
+      color: var(--contoso-gray-dark);
+    }
+    .provenance-chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: #F3F2F1; border: 1px solid var(--border);
+      border-radius: 14px; padding: 4px 10px;
+      font-size: 12px; font-weight: 500; color: var(--contoso-blue);
+      cursor: pointer; transition: background 0.15s;
+    }
+    .provenance-chip:hover { background: #E8E8E8; }
+    .provenance-chip .prov-icon { font-size: 10px; line-height: 1; }
+    .provenance-grounding {
+      margin-top: 6px;
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+      font-size: 11px;
+    }
+    .provenance-grounding .prov-label { font-weight: 600; }
+    .provenance-grounding .prov-stat {
+      font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    }
+    .provenance-grounding .prov-sep { opacity: 0.5; }
+    .provenance-grounding .prov-rai-link {
+      margin-left: auto;
+      font-size: 11px;
+      color: var(--contoso-blue);
+      text-decoration: none;
+      border-bottom: 1px dotted currentColor;
+    }
+    .provenance-grounding .prov-rai-link:hover { color: #005A9E; }
+    .provenance-panel {
+      margin-top: 8px;
+      display: flex; flex-direction: column; gap: 6px;
+    }
+    .source-card {
+      background: white;
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--contoso-blue);
+      border-radius: 4px;
+      padding: 8px 10px;
+    }
+    .source-head {
+      display: flex; align-items: center; gap: 8px;
+      margin-bottom: 4px;
+    }
+    .src-type {
+      font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px;
+      padding: 1px 6px; border-radius: 3px; font-weight: 600;
+    }
+    .src-type-policy { background: #DEECF9; color: #004E8C; }
+    .src-type-web    { background: #FFF3CD; color: #856404; }
+    .src-name {
+      flex: 1;
+      font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+      font-size: 12px;
+      color: var(--contoso-text);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .src-name a { color: var(--contoso-blue); text-decoration: none; }
+    .src-name a:hover { text-decoration: underline; }
+    .src-score {
+      font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+      font-size: 11px;
+      color: var(--contoso-gray-dark);
+    }
+    .source-preview {
+      font-size: 12px; line-height: 1.5;
+      color: var(--contoso-text);
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+    .source-expand {
+      margin-top: 4px;
+      background: none; border: none;
+      color: var(--contoso-blue);
+      font-size: 11px; cursor: pointer; padding: 0;
+      text-decoration: underline;
+    }
+    .source-full {
+      margin-top: 6px;
+      padding: 6px 8px;
+      background: #FAFAFA;
+      border-radius: 3px;
+      font-size: 12px; line-height: 1.5;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+    .provenance-disclaimer {
+      margin-top: 8px;
+      font-size: 11px;
+      color: var(--contoso-gray-dark);
+      padding: 6px 8px;
+      background: #FFF8E1;
+      border-left: 3px solid #F0AD4E;
+      border-radius: 3px;
+      line-height: 1.4;
+    }
+
     .suggestions { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 24px 12px; }
     .suggestion-btn {
       background: var(--contoso-blue-light); color: var(--contoso-blue);

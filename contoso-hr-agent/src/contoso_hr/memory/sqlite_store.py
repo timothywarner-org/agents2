@@ -69,7 +69,108 @@ class HRSQLiteStore:
                     ON candidates(completed_at);
                 CREATE INDEX IF NOT EXISTS idx_candidates_score
                     ON candidates(overall_score DESC);
+
+                -- chat_runs: one row per /api/chat invocation. Surfaces in
+                -- runs.html alongside the resume-evaluation pipeline so the
+                -- observability story is unified. Sources/tools are stored as
+                -- JSON because the shape is small and we never JOIN on them.
+                CREATE TABLE IF NOT EXISTS chat_runs (
+                    run_id            TEXT PRIMARY KEY,
+                    session_id        TEXT NOT NULL,
+                    user_message      TEXT NOT NULL,
+                    assistant_reply   TEXT NOT NULL,
+                    tools_invoked     TEXT,     -- JSON list of tool names
+                    provenance_json   TEXT,     -- full Provenance.model_dump_json()
+                    latency_ms        INTEGER,
+                    created_at        TEXT DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_chat_runs_session
+                    ON chat_runs(session_id);
+                CREATE INDEX IF NOT EXISTS idx_chat_runs_created
+                    ON chat_runs(created_at DESC);
             """)
+
+    def save_chat_run(
+        self,
+        run_id: str,
+        session_id: str,
+        user_message: str,
+        assistant_reply: str,
+        tools_invoked: list[str],
+        provenance_json: Optional[str],
+        latency_ms: int,
+    ) -> None:
+        """Persist one chat turn for unified observability in runs.html."""
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO chat_runs
+                    (run_id, session_id, user_message, assistant_reply,
+                     tools_invoked, provenance_json, latency_ms)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    session_id,
+                    user_message,
+                    assistant_reply,
+                    json.dumps(tools_invoked),
+                    provenance_json,
+                    latency_ms,
+                ),
+            )
+
+    def get_recent_chat_runs(self, limit: int = 50) -> list[dict]:
+        """Return recent chat runs as plain dicts for the runs.html merged view."""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT run_id, session_id, user_message, assistant_reply,
+                       tools_invoked, provenance_json, latency_ms, created_at
+                FROM chat_runs
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [
+            {
+                "run_id": r["run_id"],
+                "session_id": r["session_id"],
+                "user_message": r["user_message"],
+                "assistant_reply": r["assistant_reply"],
+                "tools_invoked": json.loads(r["tools_invoked"]) if r["tools_invoked"] else [],
+                "provenance": json.loads(r["provenance_json"]) if r["provenance_json"] else None,
+                "latency_ms": r["latency_ms"],
+                "created_at": r["created_at"],
+            }
+            for r in rows
+        ]
+
+    def get_chat_run(self, run_id: str) -> Optional[dict]:
+        """Fetch a single chat run by run_id for the trace pane."""
+        with self._get_connection() as conn:
+            row = conn.execute(
+                """
+                SELECT run_id, session_id, user_message, assistant_reply,
+                       tools_invoked, provenance_json, latency_ms, created_at
+                FROM chat_runs WHERE run_id = ?
+                """,
+                (run_id,),
+            ).fetchone()
+        if not row:
+            return None
+        return {
+            "run_id": row["run_id"],
+            "session_id": row["session_id"],
+            "user_message": row["user_message"],
+            "assistant_reply": row["assistant_reply"],
+            "tools_invoked": json.loads(row["tools_invoked"]) if row["tools_invoked"] else [],
+            "provenance": json.loads(row["provenance_json"]) if row["provenance_json"] else None,
+            "latency_ms": row["latency_ms"],
+            "created_at": row["created_at"],
+        }
 
     def save_result(self, result: EvaluationResult) -> None:
         """Persist a full EvaluationResult to SQLite.

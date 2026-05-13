@@ -77,7 +77,7 @@ The engine prints startup URIs:
 - **Docs:** <http://localhost:8090/docs>
 - **MCP Inspector:** <http://localhost:6374>
 
-Open the Web UI in your browser. A nav bar across all pages links to **Chat**, **Candidates**, and **Pipeline Runs**.
+Open the Web UI in your browser. A global nav bar across all pages links to **Chat**, **Candidates**, **Pipeline Runs**, **Memory**, and **Responsible AI**.
 
 ## Agent Roster
 
@@ -220,13 +220,21 @@ Open `http://localhost:8090/candidates.html` -- auto-refreshes every 10 seconds.
 
 Open `http://localhost:8090/runs.html` -- the Pipeline Trace viewer. Split-panel layout: the left panel lists all pipeline runs, and the right panel shows a visual trace for the selected run. Parallel branches (policy_expert and resume_analyst) appear side-by-side with a "parallel fan-out" label.
 
-### 5. Observe Memory and Persistence
+### 5. Peek at Agent Memory
+
+Open `http://localhost:8090/meta.html` -- the Memory page. Live snapshot of every persistent store the agent owns: `hr.db`, `checkpoints.db`, the ChromaDB collection (146 chunks, 8 docs), server-side chat sessions in `data/chat_sessions/`, and the outgoing result archive in `data/outgoing/`. Each card shows path, size, row/file count, last-modified time, and (for ChromaDB) the ingested document list. Backed by the `GET /api/meta` endpoint -- each per-store summary is wrapped in try/except so a future schema shift degrades to `{"error": ...}` per-store instead of breaking the whole response. Run a pipeline, then click Refresh and watch the counts change.
+
+### 6. Map the Pipeline onto Responsible AI
+
+Open `http://localhost:8090/rai.html` -- a static reference page that maps Microsoft's six Responsible AI principles (fairness, reliability and safety, privacy and security, inclusiveness, transparency, accountability) onto specific nodes and data stores in this pipeline. Below the principle grid is a curated list of Azure AI services that could be wired up to reinforce each principle -- Azure OpenAI content filters (already on), Azure AI Content Safety, AI Foundry Evaluations, Microsoft Purview, Defender for Cloud, Azure Monitor -- each annotated with where it would plug in. None of these services are wired into this demo; the banner at the top of the page makes that explicit. The page is a teaching artifact for the Responsible AI section of the course.
+
+### 7. Observe Memory and Persistence
 
 Each pipeline run uses a stable `thread_id` with LangGraph `SqliteSaver`. Run the same resume twice and the second run finds prior checkpoint state in `data/checkpoints.db`.
 
-Chat history uses two-layer persistence (see Diagram D below). Pipeline results persist in `data/hr.db`.
+Chat history uses two-layer persistence (see Diagram D below). Pipeline results persist in `data/hr.db`. The Memory page (step 5) is the fastest way to see all of this from one view.
 
-### 6. Explore the MCP Server
+### 8. Explore the MCP Server
 
 If you used `start.ps1`, the MCP Inspector is already running in the background (stdio mode). Otherwise, launch it manually:
 
@@ -373,6 +381,8 @@ contoso-hr-agent/
 │   ├── chat.html / chat.js    # Chat UI with upload, session mgmt, past sessions
 │   ├── candidates.html / .js  # Candidate results grid (auto-refresh)
 │   ├── runs.html / runs.js    # Pipeline Trace viewer (split-panel, parallel viz)
+│   ├── meta.html              # Memory page -- live snapshot of all 5 stores via /api/meta
+│   ├── rai.html               # Responsible AI -- 6 principles + Azure service map (static)
 │   └── style.css              # Shared styles
 ├── data/                      # Runtime data (gitignored)
 │   ├── incoming/              # Resume drop folder (watched)
@@ -401,6 +411,7 @@ contoso-hr-agent/
 | `/api/candidates` | GET | List evaluated candidates. Query params: `limit` (default 50), `decision` (filter). Returns `CandidateSummary[]`. |
 | `/api/candidates/{id}` | GET | Full `EvaluationResult` for one candidate. 404 if not found. |
 | `/api/stats` | GET | Aggregate statistics: total evaluations, decision breakdown, average score, average duration. |
+| `/api/meta` | GET | Live snapshot of every persistent store (hr.db, checkpoints.db, chroma/, chat_sessions/, outgoing/) with path, size, row/file count, mtime, and the ChromaDB ingested-doc list. Each per-store probe is try/except-wrapped so one schema shift cannot break the whole response. Powers `meta.html`. |
 | `/api/chat/sessions` | GET | List all chat sessions with message count, preview, and timestamp. |
 | `/api/chat/history/{session_id}` | GET | Retrieve persisted chat history for a session. |
 | `/api/chat/history/{session_id}` | DELETE | Clear persisted chat history for a session. |

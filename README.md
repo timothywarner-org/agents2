@@ -39,6 +39,8 @@ flowchart LR
         ChatUI["chat.html\nChat + Upload"]
         CandUI["candidates.html\nCandidate Grid"]
         RunsUI["runs.html\nPipeline Trace"]
+        MetaUI["meta.html\nMemory Stores"]
+        RAIUI["rai.html\nResponsible AI"]
     end
 
     subgraph FastAPI["FastAPI :8090"]
@@ -46,6 +48,7 @@ flowchart LR
         ChatAPI["/api/chat\n/api/chat/sessions"]
         UploadAPI["/api/upload"]
         CandAPI["/api/candidates\n/api/candidates/{id}\n/api/stats"]
+        MetaAPI["/api/meta\nLive store snapshot"]
         HealthAPI["/api/health"]
     end
 
@@ -72,6 +75,7 @@ flowchart LR
     ChatUI -- "file upload" --> UploadAPI
     CandUI -- "read results" --> CandAPI
     RunsUI -- "trace data" --> CandAPI
+    MetaUI -- "store snapshot" --> MetaAPI
 
     ChatAPI --> Concierge
     UploadAPI -- "saves to\ndata/incoming/" --> Incoming
@@ -87,6 +91,10 @@ flowchart LR
     ChatAPI --> ChatMem
 
     CandAPI --> SQLite
+    MetaAPI --> SQLite
+    MetaAPI --> Chroma
+    MetaAPI --> Checkpoints
+    MetaAPI --> ChatMem
 
     MCP -. "tools + resources" .-> Pipeline
     MCP -. "tools + resources" .-> SQLite
@@ -139,6 +147,8 @@ cp .env.example .env
 #    Chat:           http://localhost:8090/chat.html
 #    Candidates:     http://localhost:8090/candidates.html
 #    Pipeline Runs:  http://localhost:8090/runs.html
+#    Memory:         http://localhost:8090/meta.html
+#    Responsible AI: http://localhost:8090/rai.html
 ```
 
 ### Individual Services
@@ -252,15 +262,17 @@ ResumeSubmission  (input: candidate name, resume text, file path)
 
 ---
 
-## Web UI (Three Pages)
+## Web UI (Five Pages)
 
-All three pages are linked in the navigation bar: **Chat | Candidates | Pipeline Runs**.
+All five pages share a global navigation bar: **Chat | Candidates | Pipeline Runs | Memory | Responsible AI**.
 
 | Page | URL | Purpose |
 |------|-----|---------|
 | **Chat** | `/chat.html` | Chat with the ChatConcierge agent ("Alex"), upload resumes, "New chat" and "Clear history" buttons, Past Sessions panel in right sidebar with click-to-restore |
 | **Candidates** | `/candidates.html` | Evaluation grid with detail modal for each candidate |
 | **Pipeline Runs** | `/runs.html` | Pipeline Trace viewer -- split-panel view showing full pipeline execution per run, including the parallel `policy_expert` and `resume_analyst` branches |
+| **Memory** | `/meta.html` | Live snapshot of every persistent store the agent owns (hr.db, checkpoints.db, ChromaDB, chat_sessions/, outgoing/) -- path, size, row/file count, mtime, ingested doc list. Refresh button re-runs the snapshot. Backed by `/api/meta` |
+| **Responsible AI** | `/rai.html` | Static reference page mapping Microsoft's 6 RAI principles (fairness, reliability and safety, privacy and security, inclusiveness, transparency, accountability) onto this pipeline, plus the Azure AI services that could be wired up to reinforce each pillar |
 
 ---
 
@@ -273,6 +285,7 @@ All three pages are linked in the navigation bar: **Chat | Candidates | Pipeline
 | GET | `/api/candidates` | List all evaluated candidates |
 | GET | `/api/candidates/{id}` | Get full evaluation for one candidate |
 | GET | `/api/stats` | Aggregate evaluation statistics |
+| GET | `/api/meta` | Live snapshot of every persistent store (paths, sizes, counts, mtimes) -- powers the Memory page |
 | GET | `/api/health` | Health check |
 | GET | `/api/chat/history/{id}` | Retrieve chat history for a session |
 | DELETE | `/api/chat/history/{id}` | Delete chat history for a session |
@@ -311,7 +324,15 @@ The file watcher detects the new resume within 3 seconds and triggers the full L
 
 Open `http://localhost:8090/candidates.html` to see the evaluation grid. Click any candidate for the full detail modal. Open `http://localhost:8090/runs.html` to inspect the pipeline trace for each run, including the parallel branches.
 
-### Step 5 -- Explore MCP
+### Step 5 -- Peek at Agent Memory
+
+Open `http://localhost:8090/meta.html` to see every persistent store the agent owns -- `hr.db`, `checkpoints.db`, the ChromaDB collection, server-side chat sessions, and the outgoing result archive -- with path, size, row/file count, and last-modified time per store. Run a pipeline, click Refresh, watch the counts change. This is the fastest way to show learners that "memory" in an agent isn't a single store; it's five layered ones.
+
+### Step 6 -- Map the Pipeline onto Responsible AI
+
+Open `http://localhost:8090/rai.html` for a static reference page mapping Microsoft's six Responsible AI principles (fairness, reliability and safety, privacy and security, inclusiveness, transparency, accountability) onto specific nodes and data stores in this pipeline, plus the Azure AI services that could be wired up to enforce each principle (Content Safety, AI Foundry Evaluations, Defender for Cloud, Purview, and friends).
+
+### Step 7 -- Explore MCP
 
 Start the MCP server with `uv run hr-mcp` and use [MCP Inspector](https://github.com/modelcontextprotocol/inspector) to call tools like `list_candidates`, `query_policy`, and `trigger_resume_evaluation`. This shows how external AI clients can interact with the pipeline programmatically.
 
@@ -372,6 +393,8 @@ agents2/
 │   │   ├── candidates.js              # Candidate grid client logic
 │   │   ├── runs.html                  # Pipeline Trace viewer (split-panel, parallel branches)
 │   │   ├── runs.js                    # Pipeline trace client logic
+│   │   ├── meta.html                  # Memory page -- live snapshot of all 5 stores via /api/meta
+│   │   ├── rai.html                   # Responsible AI page -- 6 principles + Azure service map
 │   │   └── style.css                  # Shared styles
 │   ├── sample_resumes/                # 13 trainer candidate resumes (3 quality tiers)
 │   ├── sample_knowledge/              # 8 HR policy documents (PDF, DOCX, PPTX, MD)

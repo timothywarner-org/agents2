@@ -34,8 +34,12 @@ from .models import (
     ChatMessage,
     ChatResponse,
     EvaluationResult,
+    Provenance,
+    ProvenanceGrounding,
+    ProvenanceSource,
     UploadResponse,
 )
+from .pipeline.tools import tool_capture
 from .util.port_utils import force_kill_port
 
 # ---------------------------------------------------------------------------
@@ -135,6 +139,77 @@ def _build_past_session_context(current_session_id: str, max_sessions: int = 2, 
     return "\n\n---\n".join(blocks)
 
 
+# Threshold above which we count a chunk as "matched" for the grounding
+# summary. ChromaDB cosine similarity 0.5 corresponds to a moderately
+# strong match in our corpus — empirical, not magical. Tune if recall feels off.
+_GROUNDING_MATCH_THRESHOLD = 0.5
+# Preview chunk length surfaced to the UI before "expand to full". Long
+# enough to identify the relevant passage, short enough to keep the chat
+# readable.
+_CHUNK_PREVIEW_CHARS = 200
+
+
+def _build_provenance(captured: list[dict]) -> Provenance:
+    """Turn the per-request tool-capture buffer into a Provenance block.
+
+    Each captured entry is one tool invocation. Currently handles
+    query_hr_policy (one entry → N sources, one per chunk) and
+    brave_web_search (one entry → N sources, one per web result). Errors and
+    skipped invocations don't produce sources but still count toward
+    tools_invoked so the user can see what was attempted.
+    """
+    sources: list[ProvenanceSource] = []
+    tools_invoked: list[str] = []
+    web_search_used = False
+    all_scores: list[float] = []
+
+    for entry in captured:
+        tool_name = entry.get("tool", "unknown")
+        if tool_name not in tools_invoked:
+            tools_invoked.append(tool_name)
+
+        if tool_name == "query_hr_policy":
+            chunks = entry.get("chunks") or []
+            srcs = entry.get("sources") or []
+            scores = entry.get("scores") or []
+            for i, chunk in enumerate(chunks):
+                src_name = srcs[i] if i < len(srcs) else "unknown"
+                score = scores[i] if i < len(scores) else None
+                sources.append(ProvenanceSource(
+                    type="policy",
+                    name=src_name,
+                    preview=chunk[:_CHUNK_PREVIEW_CHARS].strip(),
+                    full_text=chunk,
+                    score=score,
+                ))
+                if score is not None:
+                    all_scores.append(score)
+
+        elif tool_name == "brave_web_search":
+            web_search_used = True
+            for result in (entry.get("results") or []):
+                title = result.get("title", "") or result.get("url", "(no title)")
+                desc = result.get("description", "")
+                sources.append(ProvenanceSource(
+                    type="web",
+                    name=result.get("url") or title,
+                    preview=desc[:_CHUNK_PREVIEW_CHARS],
+                    full_text=desc,
+                    score=None,
+                ))
+
+    grounding = ProvenanceGrounding(
+        retrieved_chunks=len(sources),
+        chunks_above_threshold=sum(
+            1 for s in all_scores if s >= _GROUNDING_MATCH_THRESHOLD
+        ),
+        top_similarity=max(all_scores) if all_scores else None,
+        tools_invoked=tools_invoked,
+        web_search_used=web_search_used,
+    )
+    return Provenance(sources=sources, grounding=grounding)
+
+
 # ---------------------------------------------------------------------------
 # API Routes
 # ---------------------------------------------------------------------------
@@ -150,6 +225,12 @@ async def chat(message: ChatMessage) -> ChatResponse:
     """
     logger = get_hr_logger()
     config = get_config()
+
+    # Track wall-time for the runs.html observability view. Using monotonic
+    # so a clock change mid-request doesn't yield a negative latency.
+    import time
+    chat_run_id = uuid.uuid4().hex[:12]
+    started_monotonic = time.monotonic()
 
     # Load (or create) persistent session history
     history = _load_session(message.session_id)
@@ -170,6 +251,13 @@ async def chat(message: ChatMessage) -> ChatResponse:
         f"\nPRIOR SESSION CONTEXT (recent past conversations — use only if relevant):\n{past_context}\n"
         if past_context else ""
     )
+
+    # Per-request capture buffer for tool invocations. The ContextVar token
+    # lets us reset cleanly even if kickoff raises. The tools in pipeline.tools
+    # check this var and append to the list whenever it's set.
+    captured: list[dict] = []
+    capture_token = tool_capture.set(captured)
+    provenance: Optional[Provenance] = None
 
     try:
         from crewai import Crew, Process, Task
@@ -209,11 +297,42 @@ Do not repeat the conversation history in your reply — just answer the current
             "I'm sorry, I encountered an error. "
             "Please check that Azure AI Foundry is configured and the knowledge base is seeded."
         )
+    finally:
+        # Always reset the ContextVar and build provenance from whatever we
+        # captured (possibly nothing, e.g. if the agent answered from memory
+        # without invoking a tool — that's a legitimate signal too).
+        tool_capture.reset(capture_token)
+        try:
+            provenance = _build_provenance(captured)
+        except Exception as prov_err:
+            # Provenance is a transparency feature; if building it fails for
+            # any reason, log and continue rather than break the chat reply.
+            logger.error(f"Provenance build failed: {prov_err}", prov_err)
+            provenance = None
 
     history.append({"role": "assistant", "content": reply})
 
     # Persist to disk so context survives server restarts
     _save_session(message.session_id, history)
+
+    # Record this chat turn as a tracked run for runs.html. We do this in a
+    # try/except so a transient SQLite failure can never blow up a chat reply.
+    try:
+        latency_ms = int((time.monotonic() - started_monotonic) * 1000)
+        tools_used = list(provenance.grounding.tools_invoked) if provenance else []
+        prov_json = provenance.model_dump_json() if provenance else None
+        store = HRSQLiteStore(config.data_dir / "hr.db")
+        store.save_chat_run(
+            run_id=chat_run_id,
+            session_id=message.session_id,
+            user_message=message.message,
+            assistant_reply=reply,
+            tools_invoked=tools_used,
+            provenance_json=prov_json,
+            latency_ms=latency_ms,
+        )
+    except Exception as run_err:
+        logger.error(f"Chat run persist failed: {run_err}", run_err)
 
     suggestions = _get_suggestions(message.message)
 
@@ -221,6 +340,7 @@ Do not repeat the conversation history in your reply — just answer the current
         reply=reply,
         session_id=message.session_id,
         suggestions=suggestions,
+        provenance=provenance,
     )
 
 
@@ -322,6 +442,31 @@ async def list_chat_sessions() -> dict:
         except Exception:
             continue
     return {"sessions": sessions}
+
+
+@app.get("/api/chat-runs")
+async def list_chat_runs(limit: int = 50) -> dict:
+    """Return recent chat runs for the unified Pipeline Runs view.
+
+    Each row pairs the user's message with the assistant reply, the tools
+    invoked, full provenance, and observed latency. runs.html merges these
+    with /api/candidates so a single timeline shows both pipeline runs and
+    chat turns.
+    """
+    config = get_config()
+    store = HRSQLiteStore(config.data_dir / "hr.db")
+    return {"runs": store.get_recent_chat_runs(limit=limit)}
+
+
+@app.get("/api/chat-runs/{run_id}")
+async def get_chat_run(run_id: str) -> dict:
+    """Return a single chat run by run_id."""
+    config = get_config()
+    store = HRSQLiteStore(config.data_dir / "hr.db")
+    run = store.get_chat_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"chat run {run_id} not found")
+    return run
 
 
 @app.get("/api/candidates", response_model=list[CandidateSummary])

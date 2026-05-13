@@ -94,6 +94,17 @@
     }
     .store-card .v.highlight { color: var(--contoso-blue); font-weight: 600; }
     .store-card .v.error { color: var(--contoso-red); }
+    /* Long filesystem paths: drop the ellipsis, allow wrapping at any char so
+       Windows backslash paths break cleanly without needing whitespace. */
+    .store-card .v.path {
+      max-width: 70%;
+      white-space: normal;
+      overflow: visible;
+      overflow-wrap: anywhere;
+      word-break: break-all;
+      line-height: 1.4;
+    }
+    .store-card .row.path-row { align-items: flex-start; }
     .store-card .sources {
       margin-top: 10px;
       padding-top: 10px;
@@ -171,17 +182,19 @@
     }
 
     function renderRow(k, v, opts = {}) {
-      const cls = ["v"];
-      if (opts.highlight) cls.push("highlight");
-      if (opts.error) cls.push("error");
-      return `<div class="row"><span class="k">${k}</span><span class="${cls.join(" ")}" title="${v}">${v}</span></div>`;
+      const valueCls = ["v"];
+      if (opts.highlight) valueCls.push("highlight");
+      if (opts.error) valueCls.push("error");
+      if (opts.path) valueCls.push("path");
+      const rowCls = opts.path ? "row path-row" : "row";
+      return `<div class="${rowCls}"><span class="k">${k}</span><span class="${valueCls.join(" ")}" title="${v}">${v}</span></div>`;
     }
 
     function renderCard(key, store) {
       const missing = !store.exists;
       const cls = missing ? "card store-card missing" : "card store-card";
       let rows = "";
-      rows += renderRow("Path", store.path);
+      rows += renderRow("Path", store.path, { path: true });
       rows += renderRow("Exists", store.exists ? "yes" : "no", { error: !store.exists });
       rows += renderRow("Size", fmtBytes(store.size_bytes || 0));
       rows += renderRow("Modified", fmtTime(store.mtime));

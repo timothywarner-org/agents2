@@ -7,18 +7,41 @@ during Crew.kickoff() task execution.
 Tools:
   - query_hr_policy: ChromaDB semantic search over HR policy docs
   - brave_web_search: Brave Search API for candidate/company research
+
+Provenance capture: query_hr_policy and brave_web_search append to the
+per-request buffer in `tool_capture` (a ContextVar) when one is active,
+so engine.py /api/chat can surface retrieved sources to the user without
+asking the LLM to self-report what it used. The pipeline (file-watcher
+path) leaves the ContextVar unset, so capture is a no-op there.
 """
 
 from __future__ import annotations
 
 import json
 import os
-from typing import Optional
+from contextvars import ContextVar
+from typing import Any, Optional
 
 import httpx
 from crewai.tools import tool
 
 from ..knowledge.retriever import query_policy_knowledge
+
+
+# Per-request provenance capture buffer. /api/chat sets this to a fresh list
+# before crew.kickoff(); tools append dict entries; the endpoint reads and
+# clears it after. ContextVar (not threading.local) so asyncio.to_thread
+# correctly propagates the binding into the worker thread.
+tool_capture: ContextVar[Optional[list[dict[str, Any]]]] = ContextVar(
+    "tool_capture", default=None
+)
+
+
+def _capture(entry: dict[str, Any]) -> None:
+    """Append one tool-invocation record to the active capture buffer, if any."""
+    buf = tool_capture.get()
+    if buf is not None:
+        buf.append(entry)
 
 
 @tool("query_hr_policy")
@@ -40,13 +63,27 @@ def query_hr_policy(question: str) -> str:
     try:
         context = query_policy_knowledge(question, k=4)
         if not context.chunks:
+            _capture({"tool": "query_hr_policy", "question": question,
+                      "chunks": [], "sources": [], "scores": []})
             return "No relevant policy content found. Please consult HR directly."
+
+        # Record the full retrieval result for the API response. The LLM still
+        # gets the same string it always got — we don't change tool behavior,
+        # only observe it.
+        _capture({
+            "tool": "query_hr_policy",
+            "question": question,
+            "chunks": list(context.chunks),
+            "sources": list(context.sources),
+            "scores": list(context.scores),
+        })
 
         parts = []
         for chunk, source in zip(context.chunks, context.sources):
             parts.append(f"[Source: {source}]\n{chunk}")
         return "\n\n---\n\n".join(parts)
     except Exception as e:
+        _capture({"tool": "query_hr_policy", "question": question, "error": str(e)})
         return f"Policy knowledge base query failed: {e}. Proceed with general knowledge."
 
 
@@ -68,6 +105,8 @@ def brave_web_search(query: str) -> str:
     """
     api_key = os.getenv("BRAVE_API_KEY", "")
     if not api_key:
+        _capture({"tool": "brave_web_search", "query": query,
+                  "skipped": "BRAVE_API_KEY not set"})
         return json.dumps({
             "note": "Brave Search not configured (BRAVE_API_KEY not set). "
                     "Proceeding without web search.",
@@ -96,11 +135,15 @@ def brave_web_search(query: str) -> str:
                 "description": item.get("description", "")[:300],
             })
 
+        _capture({"tool": "brave_web_search", "query": query, "results": results})
         return json.dumps({"query": query, "results": results}, indent=2)
 
     except httpx.HTTPStatusError as e:
+        _capture({"tool": "brave_web_search", "query": query,
+                  "error": f"HTTP {e.response.status_code}"})
         return json.dumps({"error": f"Search API error: {e.response.status_code}", "results": []})
     except Exception as e:
+        _capture({"tool": "brave_web_search", "query": query, "error": str(e)})
         return json.dumps({"error": str(e), "results": []})
 
 

@@ -192,7 +192,7 @@ async function sendMessage(text) {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
 
-    renderMessage('bot', data.reply);
+    renderMessage('bot', data.reply, undefined, data.provenance);
     appendToHistory('bot', data.reply);
 
     if (data.suggestions && data.suggestions.length) {
@@ -235,7 +235,7 @@ function setLoading(loading) {
 // Rendering
 // ---------------------------------------------------------------------------
 
-function renderMessage(role, text, timestamp) {
+function renderMessage(role, text, timestamp, provenance) {
   const container = document.getElementById('messages');
   const isBot = role === 'bot';
   const time = timestamp || new Date();
@@ -250,7 +250,104 @@ function renderMessage(role, text, timestamp) {
     </div>
   `;
   container.appendChild(div);
+
+  if (isBot && provenance && (provenance.sources?.length || provenance.grounding?.tools_invoked?.length)) {
+    div.querySelector('div:last-child').appendChild(renderProvenance(provenance));
+  }
+
   container.scrollTop = container.scrollHeight;
+}
+
+// Render the collapsible sources + grounding block under an assistant reply.
+// Sources are collapsed by default — a single chip "N sources" opens them.
+// We deliberately do NOT show an LLM-generated confidence percentage;
+// "grounding signals" are observable retrieval facts, which is honest.
+function renderProvenance(prov) {
+  const wrap = document.createElement('div');
+  wrap.className = 'provenance';
+
+  const sourceCount = (prov.sources || []).length;
+  const g = prov.grounding || {};
+  const topSim = (g.top_similarity != null) ? g.top_similarity.toFixed(2) : '—';
+  const matched = g.chunks_above_threshold ?? 0;
+  const total = g.retrieved_chunks ?? sourceCount;
+  const tools = (g.tools_invoked || []).join(', ') || '(no tools used)';
+
+  // Chip + grounding line. Chip is hidden when there are zero sources.
+  const chipHtml = sourceCount > 0
+    ? `<button class="provenance-chip" type="button">
+         <span class="prov-icon">▸</span>
+         <span>${sourceCount} source${sourceCount === 1 ? '' : 's'}</span>
+       </button>`
+    : '';
+
+  wrap.innerHTML = `
+    ${chipHtml}
+    <div class="provenance-grounding">
+      <span class="prov-label">Grounding signals:</span>
+      <span class="prov-stat">${matched}/${total} chunks matched</span>
+      <span class="prov-sep">•</span>
+      <span class="prov-stat">top similarity ${topSim}</span>
+      <span class="prov-sep">•</span>
+      <span class="prov-stat">tools: ${escapeHtml(tools)}</span>
+      <a href="rai.html" class="prov-rai-link" title="Why no confidence score?">why no confidence %?</a>
+    </div>
+    <div class="provenance-panel" hidden></div>
+  `;
+
+  if (sourceCount > 0) {
+    const chip = wrap.querySelector('.provenance-chip');
+    const panel = wrap.querySelector('.provenance-panel');
+    panel.innerHTML = prov.sources.map((s, i) => renderSource(s, i)).join('');
+
+    chip.addEventListener('click', () => {
+      const open = !panel.hidden;
+      panel.hidden = open;
+      chip.querySelector('.prov-icon').textContent = open ? '▸' : '▾';
+    });
+  }
+
+  if (prov.disclaimer) {
+    const dis = document.createElement('div');
+    dis.className = 'provenance-disclaimer';
+    dis.textContent = prov.disclaimer;
+    wrap.appendChild(dis);
+  }
+
+  return wrap;
+}
+
+function renderSource(src, idx) {
+  const score = (src.score != null) ? `<span class="src-score">sim ${src.score.toFixed(2)}</span>` : '';
+  const typeBadge = src.type === 'web' ? 'web' : 'policy';
+  const preview = escapeHtml(src.preview || '');
+  const fullText = escapeHtml(src.full_text || src.preview || '');
+  const hasMore = src.full_text && src.full_text.length > (src.preview || '').length;
+  const linkOpen = src.type === 'web' ? `<a href="${escapeHtml(src.name)}" target="_blank" rel="noopener">` : '';
+  const linkClose = src.type === 'web' ? '</a>' : '';
+
+  return `
+    <div class="source-card" data-idx="${idx}">
+      <div class="source-head">
+        <span class="src-type src-type-${typeBadge}">${typeBadge}</span>
+        <span class="src-name" title="${escapeHtml(src.name)}">${linkOpen}${escapeHtml(src.name)}${linkClose}</span>
+        ${score}
+      </div>
+      <div class="source-preview">${preview}${hasMore ? '…' : ''}</div>
+      ${hasMore ? `
+        <button class="source-expand" type="button" onclick="toggleSourceFull(this)">show full chunk</button>
+        <div class="source-full" hidden>${fullText}</div>
+      ` : ''}
+    </div>
+  `;
+}
+
+function toggleSourceFull(btn) {
+  const card = btn.closest('.source-card');
+  const full = card.querySelector('.source-full');
+  const isHidden = full.hidden;
+  full.hidden = !isHidden;
+  btn.textContent = isHidden ? 'hide full chunk' : 'show full chunk';
 }
 
 // Keep appendMessage as alias used by upload flow

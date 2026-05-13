@@ -135,14 +135,16 @@ See `README.md` for four Mermaid diagrams:
 | `src/contoso_hr/knowledge/retriever.py` | `query_policy_knowledge(question, k)` -> PolicyContext |
 | `src/contoso_hr/memory/sqlite_store.py` | HRSQLiteStore: candidates + evaluations tables |
 | `src/contoso_hr/memory/checkpoints.py` | `get_checkpointer()`, `make_thread_config(session_id)` |
-| `src/contoso_hr/engine.py` | FastAPI: /api/chat, /api/chat/sessions, /api/upload, /api/candidates, /api/stats, /api/health, GET/DELETE /api/chat/history/{id}. Prints 4 URIs on startup (Web UI, API, Docs, MCP SSE). Builds past-session context (last 6 turns from last 2 sessions) for ChatConcierge. |
+| `src/contoso_hr/engine.py` | FastAPI: /api/chat, /api/chat/sessions, /api/upload, /api/candidates, /api/stats, /api/meta, /api/health, GET/DELETE /api/chat/history/{id}. Prints 4 URIs on startup (Web UI, API, Docs, MCP SSE). Builds past-session context (last 6 turns from last 2 sessions) for ChatConcierge. `/api/meta` summarizes all 5 persistent stores; each per-store probe is try/except-wrapped so one schema shift cannot break the whole response. |
 | `src/contoso_hr/watcher/resume_watcher.py` | Polls data/incoming/ for .txt/.md/.pdf/.docx files every 3s |
 | `src/contoso_hr/watcher/process_resume.py` | Runs LangGraph pipeline and saves result to SQLite |
 | `src/contoso_hr/mcp_server/server.py` | FastMCP 2 server: all 5 MCP primitives (resources, resource templates, tools w/ sampling + elicitation, prompts). Supports SSE and stdio transport. |
 | `src/contoso_hr/util/port_utils.py` | `force_kill_port(port)` -- called on every startup |
-| `web/chat.html` / `web/chat.js` | Chat UI with upload, 6 suggestion buttons, new-chat/clear-history buttons, past sessions sidebar |
+| `web/chat.html` / `web/chat.js` | Chat UI with upload, 6 suggestion buttons (two are RAG-grounded probes for ChromaDB chunks), new-chat/clear-history buttons, past sessions sidebar |
 | `web/candidates.html` / `web/candidates.js` | Candidate results grid with auto-refresh |
 | `web/runs.html` / `web/runs.js` | Pipeline Trace viewer: split-panel, left=run list, right=visual trace with parallel branches side-by-side |
+| `web/meta.html` | Memory page -- live snapshot of all 5 persistent stores via `/api/meta`. Per-store cards with path, size, count, mtime; ChromaDB card lists ingested docs. Refresh button. Pure HTML+JS (no separate .js file). |
+| `web/rai.html` | Responsible AI page -- static reference mapping Microsoft's 6 RAI principles onto specific pipeline nodes/data stores, plus an annotated list of Azure AI services that could be wired up (Content Safety, AI Foundry Evaluations, Purview, Defender for Cloud, Azure Monitor). Banner makes clear those services are NOT actually wired into this demo. Pure HTML (no JS). |
 
 ### Data Model Chain
 
@@ -185,7 +187,7 @@ Session management endpoints:
 - `GET /api/chat/sessions` lists all session JSON files with message count, preview, and timestamp.
 - `GET /api/chat/history/{session_id}` returns the persisted history; `DELETE` clears it.
 
-Chat UI features: "New chat" button (resets UI in-place, new session ID, no reload), "Clear history" button (wipes current session only), Past Sessions panel in right sidebar (fetches `/api/chat/sessions`, click to switch). Six suggestion buttons on initial load. Nav bar across all 3 pages: Chat | Candidates | Pipeline Runs.
+Chat UI features: "New chat" button (resets UI in-place, new session ID, no reload), "Clear history" button (wipes current session only), Past Sessions panel in right sidebar (fetches `/api/chat/sessions`, click to switch). Six suggestion buttons on initial load -- two are RAG-grounded probes for compensation policy and learner-satisfaction threshold so on-stage retrieval visibly cites a policy doc. Global nav bar across all 5 pages: Chat | Candidates | Pipeline Runs | Memory | Responsible AI.
 
 ### MCP Server (FastMCP 2)
 

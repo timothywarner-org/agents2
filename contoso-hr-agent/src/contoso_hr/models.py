@@ -86,6 +86,10 @@ class PolicyContext(BaseModel):
 
     chunks: list[str] = Field(default_factory=list)
     sources: list[str] = Field(default_factory=list)
+    # Per-chunk similarity in [0.0, 1.0]; same index as chunks/sources.
+    # Derived from ChromaDB cosine distance via similarity = 1 - distance.
+    # Empty when retrieval skipped or distances were unavailable.
+    scores: list[float] = Field(default_factory=list)
     query: str = ""
 
 
@@ -154,12 +158,58 @@ class ChatMessage(BaseModel):
     session_id: str = Field(default_factory=lambda: str(uuid4()))
 
 
+class ProvenanceSource(BaseModel):
+    """A single retrieved evidence chunk surfaced to the user.
+
+    One entry per chunk returned by query_hr_policy (or analogous web/search
+    tool). The UI renders these as a collapsed sources panel under the
+    assistant's reply.
+    """
+
+    type: Literal["policy", "web"] = "policy"
+    name: str  # filename for policy, URL or page title for web
+    preview: str = ""  # first ~200 chars of the chunk
+    full_text: Optional[str] = None  # full chunk, lazily revealed by UI
+    score: Optional[float] = None  # similarity in [0,1] when available
+
+
+class ProvenanceGrounding(BaseModel):
+    """Structural signals about retrieval quality.
+
+    Deliberately NOT named "confidence" — these are observable retrieval
+    facts (how many chunks matched, how strong the top match was, which
+    tools fired). LLM self-rated confidence is a Responsible AI anti-pattern
+    and is intentionally absent from this model.
+    """
+
+    retrieved_chunks: int = 0
+    chunks_above_threshold: int = 0  # chunks with score >= 0.5
+    top_similarity: Optional[float] = None
+    tools_invoked: list[str] = Field(default_factory=list)
+    web_search_used: bool = False
+
+
+class Provenance(BaseModel):
+    """Transparency block attached to a chat reply."""
+
+    sources: list[ProvenanceSource] = Field(default_factory=list)
+    grounding: ProvenanceGrounding = Field(default_factory=ProvenanceGrounding)
+    # Plain-text caveat the UI surfaces verbatim. Keeping it server-side
+    # ensures every client sees the same wording — including any future
+    # CLI/agent integration that bypasses the web UI.
+    disclaimer: str = (
+        "Grounding signals reflect retrieval quality, not answer correctness. "
+        "Verify policy details against the source documents linked above."
+    )
+
+
 class ChatResponse(BaseModel):
     """Outbound chat response to the web UI."""
 
     reply: str
     session_id: str
     suggestions: list[str] = Field(default_factory=list)
+    provenance: Optional[Provenance] = None
 
 
 class UploadResponse(BaseModel):

@@ -161,15 +161,17 @@ data/outgoing/{candidate_id}_{ts}.json + data/hr.db + data/checkpoints.db
 
 **CrewAI + LangGraph coupling:** Each `*_crew_node` creates a `Crew(agents=[one_agent], tasks=[one_task], process=Process.sequential)` and calls `crew.kickoff()`. LangGraph owns routing/state/persistence; CrewAI owns persona execution.
 
-### Web UI (Three Pages)
+### Web UI (Five Pages)
 
-All three pages are linked in the navigation bar: **Chat | Candidates | Pipeline Runs**.
+All five pages share a global nav bar: **Chat | Candidates | Pipeline Runs | Memory | Responsible AI**.
 
 | Page | File | Purpose |
 |------|------|---------|
 | Chat | `web/chat.html` | Chat with "Alex", upload resumes, "New chat" / "Clear history" buttons, Past Sessions sidebar with click-to-restore |
 | Candidates | `web/candidates.html` | Evaluation grid + detail modal |
 | Pipeline Runs | `web/runs.html` | Pipeline Trace viewer -- split-panel showing full execution per run including parallel branches |
+| Memory | `web/meta.html` | Live snapshot of every persistent store the agent owns (hr.db, checkpoints.db, ChromaDB, chat_sessions/, outgoing/) -- path, size, row/file count, mtime, plus ChromaDB ingested-doc list. Refresh button re-runs the snapshot. Backed by `GET /api/meta`. |
+| Responsible AI | `web/rai.html` | Static reference page mapping Microsoft's 6 RAI principles (fairness, reliability and safety, privacy and security, inclusiveness, transparency, accountability) onto this pipeline, plus the Azure AI services that could be wired up to reinforce each principle. Banner makes clear none of those services are actually wired in. |
 
 ### API Endpoints
 
@@ -180,6 +182,7 @@ All three pages are linked in the navigation bar: **Chat | Candidates | Pipeline
 | GET | `/api/candidates` | List all evaluated candidates |
 | GET | `/api/candidates/{id}` | Full evaluation for one candidate |
 | GET | `/api/stats` | Aggregate evaluation statistics |
+| GET | `/api/meta` | Live snapshot of all 5 persistent stores (paths, sizes, counts, mtimes) -- powers `meta.html` |
 | GET | `/api/health` | Health check |
 | GET | `/api/chat/history/{id}` | Chat history for a session |
 | DELETE | `/api/chat/history/{id}` | Delete chat history for a session |
