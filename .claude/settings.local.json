@@ -29,7 +29,12 @@
       "Bash(uv run python -c \":*)",
       "Read(//c/github/agents2/contoso-hr-agent/**)",
       "Bash(.venv/Scripts/python.exe --version)",
-      "mcp__ms-learn__microsoft_docs_search"
+      "mcp__ms-learn__microsoft_docs_search",
+      "PowerShell(Get-NetTCPConnection -State Listen -LocalPort 8090,8091,5273,6374 -ErrorAction SilentlyContinue)",
+      "PowerShell($ok=$false; 1..30 | ForEach-Object { if \\(-not $ok\\) { try { $r = Invoke-RestMethod http://localhost:8090/api/health -TimeoutSec 2; $ok=$true; \"HEALTH OK: $\\($r | ConvertTo-Json -Compress\\)\" } catch { Start-Sleep 2 } } }; if \\(-not $ok\\) { \"engine not up yet\" })",
+      "PowerShell(try { $m = Invoke-RestMethod http://localhost:8090/api/meta -TimeoutSec 15; $m | ConvertTo-Json -Depth 4 } catch { \"meta failed: $_\" })",
+      "PowerShell($body = @{ message = \"What is the minimum learner satisfaction score Contoso requires for technical trainers?\"; session_id = \"smoke-preflight\" } | ConvertTo-Json; try { $r = Invoke-RestMethod http://localhost:8090/api/chat -Method Post -Body $body -ContentType 'application/json' -TimeoutSec 120; \"REPLY: \" + $r.response } catch { \"CHAT FAILED: $_\" })",
+      "PowerShell($body = @{ message = \"What is the minimum learner satisfaction score Contoso requires for technical trainers?\"; session_id = \"smoke-preflight2\" } | ConvertTo-Json; try { $r = Invoke-WebRequest http://localhost:8090/api/chat -Method Post -Body $body -ContentType 'application/json' -TimeoutSec 120; $r.Content } catch { \"CHAT FAILED: $\\($_.Exception.Message\\)\"; $_.ErrorDetails.Message })"
     ]
   }
 }
